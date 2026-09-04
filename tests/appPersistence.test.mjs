@@ -14,7 +14,7 @@ before(() => {
   const source = readFileSync(new URL('../src/App.svelte', import.meta.url), 'utf8').split('<script lang="ts">')[1].split('</script>')[0];
   const ast = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
   const names = ['initialize', 'currentEditor', 'updateEntry', 'receiveState', 'translationActivity',
-    'finishEditing', 'activate', 'moveEntry', 'saveCurrentEntry', 'flushBeforeLeaving', 'retrySave',
+    'finishEditing', 'closeEntryMenu', 'activate', 'moveEntry', 'saveCurrentEntry', 'flushBeforeLeaving', 'retrySave',
     'discardSavedData', 'undo'];
   const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text))
     .map(node => node.getText(ast)).join('\n');
@@ -23,6 +23,7 @@ before(() => {
     const { initial, editors, persistence, createEditorUpdates, storage: localStorage, client, history,
       RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm } = dependencies;
     let entries = initial, activeEntryId = entries[0].id, rowStates = {}, ready = true, restoring = false;
+    let openEntryMenuId = null;
     let saveError = null, loadFailed = false, loading = false, destroyed = false;
     const updates = createEditorUpdates({ debug() {}, save: saveCurrentEntry }, { setTimeout() {}, clearTimeout() {} });
     const tick = async () => {};

@@ -1131,25 +1131,24 @@
   </div>
 {/snippet}
 
-  {#if mode === 'ARROW'}
-    <p class="selection-guide" role="status">{arrowKind === 'apposition' ? `同格: 相手は ${appositionMarkerLabels} または空。` : '矢印:'} 移動またはクリックで相手を選択 / {operationKeyLabel('arrow.commit')} で確定 / {operationKeyLabel('editor.cancel')} で取消</p>
-  {/if}
-  {#if arrowMessage}<p class="selection-guide" role="status">{arrowMessage}</p>{/if}
-  {#if mode === 'VISUAL_MULTI'}
-    <p class="selection-guide">個別選択: 移動して {operationKeyLabel('selection.toggle')}、またはクリックで追加・解除 / {operationKeyLabel('selection.commit')} で下線作成 / {operationKeyLabel('editor.cancel')} で取消（{selectedSlots.length} 選択中）</p>
-  {/if}
-  {#if mode === 'BORDER'}
-    <p class="selection-guide" role="status">境目モード: {operationKeyLabel('cursor.left')} / {operationKeyLabel('cursor.right')} で移動 / {operationKeyLabel('cursor.rowStart')}・{operationKeyLabel('cursor.rowEnd')} で文頭・文末 ・ {operationKeyLabel('pseudo.start')} で疑似トークン作成 / {operationKeyLabel('bracket.deleteBefore')}・{operationKeyLabel('bracket.deleteAfter')} で隣の括弧・疑似トークン削除 / {operationKeyLabel('editor.cancel')} で Normal（境目 {borderIndex + 1} / {tokens.length + 1}）</p>
-  {/if}
-  {#if mode === 'PSEUDO_INPUT'}
-    <p class="selection-guide" role="status">疑似トークン: {operationKeyLabel('pseudo.commit')} で確定 / {operationKeyLabel('editor.cancel')}・入力欄から離れると取消（再編集は空文字で削除。関連する下線も削除されます）</p>
-  {/if}
-  {#if mode === 'MARKER_INPUT'}
-    <p class="selection-guide" role="status">標識の自由入力: {operationKeyLabel('marker.customCommit')} で確定 / {operationKeyLabel('editor.cancel')}・入力欄から離れると取消（空文字で削除）</p>
-  {/if}
-  {#if pseudoMessage}<p class="selection-guide" role="status">{pseudoMessage}</p>{/if}
-  {#if mode === 'FORM'}
-    <p class="selection-guide" role="status">formモード: {formInputGuide} ・ {operationKeyLabel('form.commit')} / {operationKeyLabel('editor.cancel')} で確定 / 移動キー・{operationKeyLabel('entry.next')}/{operationKeyLabel('entry.previous')} で確定して移動 / {operationKeyLabel('form.clear')} で即時削除 / {operationKeyLabel('form.eraseInput')} で入力を戻す（Dは左右別、T・基礎下線は1つ）</p>
+  {#if active}
+    <aside class="operation-guide" role="status" aria-label="操作案内">
+      {#if arrowMessage || pseudoMessage}
+        <p class="selection-guide">{arrowMessage || pseudoMessage}</p>
+      {:else if mode === 'ARROW'}
+        <p class="selection-guide">{arrowKind === 'apposition' ? `同格: 相手は ${appositionMarkerLabels} または空。` : '矢印:'} 移動またはクリックで相手を選択 / {operationKeyLabel('arrow.commit')} で確定 / {operationKeyLabel('editor.cancel')} で取消</p>
+      {:else if mode === 'VISUAL_MULTI'}
+        <p class="selection-guide">個別選択: 移動して {operationKeyLabel('selection.toggle')}、またはクリックで追加・解除 / {operationKeyLabel('selection.commit')} で下線作成 / {operationKeyLabel('editor.cancel')} で取消（{selectedSlots.length} 選択中）</p>
+      {:else if mode === 'BORDER'}
+        <p class="selection-guide">境目モード: {operationKeyLabel('cursor.left')} / {operationKeyLabel('cursor.right')} で移動 / {operationKeyLabel('cursor.rowStart')}・{operationKeyLabel('cursor.rowEnd')} で文頭・文末 ・ {operationKeyLabel('pseudo.start')} で疑似トークン作成 / {operationKeyLabel('bracket.deleteBefore')}・{operationKeyLabel('bracket.deleteAfter')} で隣の括弧・疑似トークン削除 / {operationKeyLabel('editor.cancel')} で Normal（境目 {borderIndex + 1} / {tokens.length + 1}）</p>
+      {:else if mode === 'PSEUDO_INPUT'}
+        <p class="selection-guide">疑似トークン: {operationKeyLabel('pseudo.commit')} で確定 / {operationKeyLabel('editor.cancel')}・入力欄から離れると取消（再編集は空文字で削除。関連する下線も削除されます）</p>
+      {:else if mode === 'MARKER_INPUT'}
+        <p class="selection-guide">標識の自由入力: {operationKeyLabel('marker.customCommit')} で確定 / {operationKeyLabel('editor.cancel')}・入力欄から離れると取消（空文字で削除）</p>
+      {:else if mode === 'FORM'}
+        <p class="selection-guide">formモード: {formInputGuide} ・ {operationKeyLabel('form.commit')} / {operationKeyLabel('editor.cancel')} で確定 / 移動キー・{operationKeyLabel('entry.next')}/{operationKeyLabel('entry.previous')} で確定して移動 / {operationKeyLabel('form.clear')} で即時削除 / {operationKeyLabel('form.eraseInput')} で入力を戻す（Dは左右別、T・基礎下線は1つ）</p>
+      {/if}
+    </aside>
   {/if}
 
   <section
@@ -1157,7 +1156,6 @@
     class:visual={selecting}
     aria-label="英文構造図編集領域"
   >
-    <div class="section-heading"><span class="section-label">ENGLISH</span><button type="button" on:click={() => startInput()}>英文を編集</button></div>
     {#if mode === 'INSERT'}
       <p class="selection-guide">英文を変更すると、疑似トークン・角括弧・丸括弧・下線・標識・活用表示・分割・矢印はリセットされます。</p>
       <div class="input-row">
@@ -1375,7 +1373,6 @@
     {/if}
 
     <div class="translation-block">
-      <div class="section-heading"><span class="section-label">TRANSLATION</span><button type="button" on:click={() => startInput(true)}>訳文を編集</button></div>
       {#if mode === 'TRANSLATION'}
         <textarea bind:value={translation} aria-label="訳文" rows="3" use:focusOnMount
           on:input={translationActivity} on:keyup={translationActivity}

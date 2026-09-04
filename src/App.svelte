@@ -19,6 +19,7 @@
   const storageKey = 'IndexedDB: kiri-kyo-editor';
   let entries: Entry[] = [createEntry(createExampleDocument())];
   let activeEntryId = entries[0].id;
+  let openEntryMenuId: string | null = null;
   let editors: Record<string, EntryEditorHandle | undefined> = {};
   let rowStates: Record<string, EntryEditorState> = {};
   const history = new EditHistory<DocumentSnapshot>();
@@ -165,6 +166,7 @@
     if (!ready || restoring || id === activeEntryId) return;
     finishEditing();
     saveCurrentEntry();
+    closeEntryMenu(false);
     activeEntryId = id;
   }
 
@@ -341,7 +343,55 @@
     void scrollToActive(true);
   }
 
+  function closeEntryMenu(restoreFocus = true) {
+    const id = openEntryMenuId;
+    openEntryMenuId = null;
+    if (restoreFocus && id) document.getElementById(`entry-menu-trigger-${id}`)?.focus({ preventScroll: true });
+  }
+
+  async function toggleEntryMenu(id: string) {
+    if (openEntryMenuId === id) { closeEntryMenu(); return; }
+    activate(id);
+    openEntryMenuId = id;
+    await tick();
+    document.getElementById(`entry-${id}`)?.querySelector<HTMLButtonElement>('.entry-menu-panel button')?.focus({ preventScroll: true });
+  }
+
+  function runEntryAction(action: () => unknown) {
+    closeEntryMenu();
+    action();
+  }
+
+  function handleEntryMenuKeydown(event: KeyboardEvent) {
+    const operation = resolveKeyboardOperation(event, [
+      { operation: 'editor.cancel', rules: [{ key: 'Escape', repeat: null }] },
+      { operation: 'cursor.down', rules: [{ key: 'ArrowDown', repeat: null }] },
+      { operation: 'cursor.up', rules: [{ key: 'ArrowUp', repeat: null }] },
+      { operation: 'cursor.rowStart', rules: [{ key: 'Home', repeat: null }] },
+      { operation: 'cursor.rowEnd', rules: [{ key: 'End', repeat: null }] },
+    ]);
+    if (operation === 'editor.cancel' && openEntryMenuId) {
+      event.preventDefault();
+      closeEntryMenu();
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const panel = target.closest('.entry-menu-panel');
+    if (!panel || !operation) return;
+    event.preventDefault();
+    const buttons = Array.from(panel.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+    const current = buttons.indexOf(target as HTMLButtonElement);
+    const next = operation === 'cursor.rowStart' ? 0 : operation === 'cursor.rowEnd' ? buttons.length - 1
+      : (current + (operation === 'cursor.down' ? 1 : -1) + buttons.length) % buttons.length;
+    buttons[next]?.focus({ preventScroll: true });
+  }
+
   function handleKeydown(event: KeyboardEvent) {
+    if (event.target instanceof Element && event.target.closest('.entry-menu')) {
+      if (openEntryMenuId) { handleEntryMenuKeydown(event); return; }
+      if (matchesKeyboardInput(event, [{ key: ['Enter', ' ', 'Tab'], ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null }])) return;
+    }
     if (!(event.target instanceof Element) || !event.target.closest('.debug-panel')) updates.schedule();
     if (!ready || restoring || bulkAfterId !== null || matchesKeyboardInput(event, [
       { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
@@ -429,6 +479,7 @@
 <svelte:window on:keydown={handleKeydown} on:blur={finishMarkerInput}
   on:beforeunload={flushBeforeLeaving} on:pagehide={flushBeforeLeaving}
   on:pointerdown={(event) => {
+    if (!(event.target instanceof Element) || !event.target.closest('.entry-menu')) closeEntryMenu();
     if (!(event.target instanceof Element) || !event.target.closest('.debug-panel')) {
       updates.schedule();
       finishMarkerInput();
@@ -436,6 +487,7 @@
   }}
   on:compositionstart={finishMarkerInput}
   on:focusin={(event) => {
+    if (!(event.target instanceof Element) || !event.target.closest('.entry-menu')) closeEntryMenu(false);
     if (!(event.target instanceof Element) || !event.target.closest('.diagram, .debug-panel')) finishMarkerInput();
   }}
  />
@@ -483,16 +535,23 @@
         <section id={`entry-${entry.id}`} data-entry-id={entry.id} class="entry" class:active={activeEntryId === entry.id}
           tabindex="-1"
           aria-label={`第${index + 1}組`} on:pointerdown|capture={() => activate(entry.id)} on:focusin|capture={() => activate(entry.id)}>
-          <header class="entry-header">
-            <button class="entry-number" type="button" aria-pressed={activeEntryId === entry.id} on:click={() => activate(entry.id)}>第{index + 1}組</button>
-            <div class="entry-actions">
-              <button type="button" on:click={() => addEntry(entry.id)}>下に追加</button>
-              <button type="button" on:click={() => openBulkEntry(entry.id)}>英文を一括追加</button>
-              <button type="button" disabled={index === 0} on:click={() => swapEntry(entry.id, -1)}>上へ</button>
-              <button type="button" disabled={index === entries.length - 1} on:click={() => swapEntry(entry.id, 1)}>下へ</button>
-              <button type="button" on:click={() => deleteEntry(entry.id)}>削除</button>
-            </div>
-          </header>
+          <div class="entry-menu" class:open={openEntryMenuId === entry.id}>
+            <button id={`entry-menu-trigger-${entry.id}`} class="entry-menu-trigger" type="button"
+              aria-label={`第${index + 1}組の操作`} aria-expanded={openEntryMenuId === entry.id}
+              aria-controls={`entry-menu-panel-${entry.id}`} on:click={() => toggleEntryMenu(entry.id)}>⋯</button>
+            {#if openEntryMenuId === entry.id}
+              <div id={`entry-menu-panel-${entry.id}`} class="entry-menu-panel" role="group" aria-label={`第${index + 1}組の操作`}>
+                <span class="entry-menu-title">第{index + 1}組</span>
+                <button type="button" on:click={() => runEntryAction(() => editors[entry.id]?.startInput())}>英文を編集</button>
+                <button type="button" on:click={() => runEntryAction(() => editors[entry.id]?.startInput(true))}>訳文を編集</button>
+                <button type="button" on:click={() => runEntryAction(() => addEntry(entry.id))}>下に追加</button>
+                <button type="button" on:click={() => runEntryAction(() => openBulkEntry(entry.id))}>英文を一括追加</button>
+                <button type="button" disabled={index === 0} on:click={() => runEntryAction(() => swapEntry(entry.id, -1))}>上へ</button>
+                <button type="button" disabled={index === entries.length - 1} on:click={() => runEntryAction(() => swapEntry(entry.id, 1))}>下へ</button>
+                <button type="button" on:click={() => runEntryAction(() => deleteEntry(entry.id))}>削除</button>
+              </div>
+            {/if}
+          </div>
           <EntryEditor bind:this={editors[entry.id]} initial={entry.document} active={activeEntryId === entry.id}
             ontranslationactivity={translationActivity}
             onactivate={() => activate(entry.id)} onundo={(redo) => void undo(redo)}

@@ -48,7 +48,7 @@ before(async () => {
   const appSource = readFileSync(new URL('../src/App.svelte', import.meta.url), 'utf8').split('<script lang="ts">')[1].split('</script>')[0];
   const ast = ts.createSourceFile('App.ts', appSource, ts.ScriptTarget.Latest, true);
   const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node)
-    && ['handleKeydown', 'moveEntry', 'finishEditing', 'activate', 'saveCurrentEntry'].includes(node.name?.text)).map(node => node.getText(ast)).join('\n');
+    && ['handleKeydown', 'moveEntry', 'finishEditing', 'closeEntryMenu', 'activate', 'saveCurrentEntry'].includes(node.name?.text)).map(node => node.getText(ast)).join('\n');
   assert.equal(functions.includes('function moveEntry'), true);
   const body = ts.transpileModule(functions, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   appNavigation = new Function('entryShortcut', 'matchesKeyboardInput', 'resolveKeyboardOperation', 'editors', 'initialIndex', `
@@ -57,6 +57,7 @@ before(async () => {
     const HTMLButtonElement = class extends Element {};
     const entries = editors.map((_, i) => ({ id: String(i) }));
     let activeEntryId = String(initialIndex);
+    let openEntryMenuId = null;
     const ready = true, restoring = false, bulkAfterId = null;
     const updates = { schedule() {} };
     const persistence = { saveEntry() {} };
