@@ -19,7 +19,8 @@
   import { enterBasicGroup, settleBasicGroups } from './groupEditing';
   import type { EntryEditorState } from './entryDocument';
   import type { EntryInputMode } from './entryShortcuts';
-  import { markerLabel, nextMarkerInput, setSlotMarker, type MarkerId } from './markers';
+  import { markerFromText, markerLabel, nextMarkerInput, setSlotMarker, type MarkerId } from './markers';
+  import { customMarkerInputAction, type CustomMarkerInputSession } from './customMarkerEditing';
   import { DEFAULT_FORM_INPUT_BINDINGS, operationKeyLabel } from './inputConfig';
   import {
     type Cursor,
@@ -40,7 +41,7 @@
     moveToRowEdge as getRowEdgeCursor,
   } from './layout';
 
-  type Mode = 'NORMAL' | 'BORDER' | 'VISUAL' | 'VISUAL_MULTI' | 'ARROW' | 'INSERT' | 'TRANSLATION' | 'PSEUDO_INPUT' | 'FORM';
+  type Mode = 'NORMAL' | 'BORDER' | 'VISUAL' | 'VISUAL_MULTI' | 'ARROW' | 'INSERT' | 'TRANSLATION' | 'PSEUDO_INPUT' | 'MARKER_INPUT' | 'FORM';
 
   function bracketTextForOperation(operation: KeyboardOperationId | undefined): BracketText | undefined {
     if (operation === 'bracket.insertSquareOpen') return '[';
@@ -79,6 +80,7 @@
   let mode: Mode = 'NORMAL';
   let formSession: FormSession | null = null;
   let pseudoInput: PseudoInputSession | null = null;
+  let customMarkerInput: CustomMarkerInputSession | null = null;
   let pseudoMessage = '';
   let borderIndex = 0;
   let cursorX = 0;
@@ -92,6 +94,8 @@
   let tokenWidthById = new Map<string, number>();
   let pseudoInputWidth = 24;
   let pseudoInputOffset = { left: 4, top: 12 };
+  let customMarkerInputWidth = 24;
+  let customMarkerInputOffset = { left: 4, top: 12 };
   let groupLabelWidths = new Map<string, number>();
   let markerBuffer = '';
   let markerSlotId: string | undefined;
@@ -112,8 +116,10 @@
   $: currentRegion = mode === 'BORDER' || mode === 'PSEUDO_INPUT' ? undefined : regionAt(layout, cursorX, cursorY);
   $: snapshotCursor = pseudoInput ? pseudoInput.before.cursor
     : mode === 'BORDER' ? cursorFromBorder(layout, borderIndex) : { x: cursorX, y: cursorY };
-  $: pendingMarkerSlotId = markerBuffer && markerSlotId === currentId ? markerSlotId : undefined;
-  $: measurements = measureLabels(displayTokens, preview.document.slots, groups, splits, arrows, pendingMarkerSlotId, markerBuffer);
+  $: pendingMarkerSlotId = customMarkerInput?.slotId
+    ?? (markerBuffer && markerSlotId === currentId ? markerSlotId : undefined);
+  $: pendingMarkerText = customMarkerInput ? customMarkerInput.text || ' ' : markerBuffer;
+  $: measurements = measureLabels(displayTokens, preview.document.slots, groups, splits, arrows, pendingMarkerSlotId, pendingMarkerText);
   $: renderLayout = computeRenderLayout(displayTokens, groups, splits, tokenWidths, diagramWidth,
     groupLabelWidths, pendingMarkerSlotId ? { slotId: pendingMarkerSlotId, x: cursorX }
       : formSession && groups.some(group => group.slotId === formSession?.slotId) && !splitBySource.has(formSession.slotId)
@@ -186,6 +192,7 @@
     markerInput: { buffer: markerBuffer, slotId: markerSlotId ?? null, active: markerStart !== null },
     sentenceDraft,
     pseudoInput,
+    customMarkerInput,
     pseudoMessage,
     formSession,
     formRegions,
@@ -194,7 +201,9 @@
     inputTokenId,
     pseudoInputWidth,
     pseudoInputOffset,
-    textEditing: inputStart !== null || pseudoInput !== null || formSession !== null,
+    customMarkerInputWidth,
+    customMarkerInputOffset,
+    textEditing: inputStart !== null || pseudoInput !== null || customMarkerInput !== null || formSession !== null,
     document: { version: 6, tokens, slots, groups, splits, arrows, translation },
     layout,
     diagramWidth,
@@ -246,6 +255,17 @@
             node.scrollLeft, node.scrollTop, node.clientLeft, node.clientTop);
           if (offset.left !== pseudoInputOffset.left || offset.top !== pseudoInputOffset.top) pseudoInputOffset = offset;
         }
+        const markerMirror = node.querySelector<HTMLElement>('.custom-marker-input-measure');
+        if (markerMirror) {
+          const width = markerMirror.getBoundingClientRect().width;
+          if (customMarkerInputWidth !== width) customMarkerInputWidth = width;
+        }
+        const markerAnchor = node.querySelector<HTMLElement>('.custom-marker-input-anchor');
+        if (markerAnchor) {
+          const offset = inputOverlayOffset(markerAnchor.getBoundingClientRect(), node.getBoundingClientRect(),
+            node.scrollLeft, node.scrollTop, node.clientLeft, node.clientTop);
+          if (offset.left !== customMarkerInputOffset.left || offset.top !== customMarkerInputOffset.top) customMarkerInputOffset = offset;
+        }
         const groupElements = node.querySelectorAll<HTMLElement>('.group-measure');
         const groupWidths = new Map(Array.from(groupElements, (element) =>
           [element.dataset.slotId!, element.getBoundingClientRect().width] as const));
@@ -256,6 +276,7 @@
         for (const element of groupElements) observer.observe(element);
         for (const element of node.querySelectorAll('.diagram-row')) observer.observe(element);
         if (anchor) observer.observe(anchor);
+        if (markerAnchor) observer.observe(markerAnchor);
       });
     };
     const observer = new ResizeObserver(measure);
@@ -296,6 +317,51 @@
       pseudoInput = { kind: 'edit', before, tokenId: token.id, text: token.text, composing: false };
     }
     mode = 'PSEUDO_INPUT';
+  }
+
+  function startCustomMarkerInput() {
+    finishMarkerInput();
+    const before = snapshot();
+    const slotId = currentSlotId();
+    if (slotId === undefined || !isSlotEditable(before.document, slotId)) return;
+    const marker = before.document.slots.find((slot) => slot.id === slotId)?.marker;
+    customMarkerInput = { before, slotId, text: markerLabel(marker), composing: false };
+    mode = 'MARKER_INPUT';
+  }
+
+  function cancelCustomMarkerInput() {
+    const session = customMarkerInput;
+    if (!session) return;
+    customMarkerInput = null;
+    cursorX = session.before.cursor.x;
+    cursorY = session.before.cursor.y;
+    mode = 'NORMAL';
+  }
+
+  function commitCustomMarkerInput() {
+    const session = customMarkerInput;
+    if (!session) return;
+    const current = snapshot().document;
+    const slots = setSlotMarker(current.slots, session.slotId, markerFromText(session.text));
+    const withMarker = slots.every((slot, index) => slot === current.slots[index]) ? current : { ...current, slots };
+    const next = pruneArrows(withMarker);
+    const changed = next !== current;
+    customMarkerInput = null;
+    mode = 'NORMAL';
+    applyDocument(next, session.slotId);
+    if (changed) history.record(session.before, snapshot());
+  }
+
+  function handleCustomMarkerKeydown(event: KeyboardEvent) {
+    if (!customMarkerInput) return;
+    if (resolveKeyboardOperation(event, [
+      { operation: 'history.redo', rules: [{ key: 'r', ctrlKey: true, repeat: null }] },
+    ]) === 'history.redo') event.preventDefault();
+    const action = customMarkerInputAction(event, customMarkerInput.composing);
+    if (!action) return;
+    event.preventDefault();
+    if (action === 'marker.customCommit') commitCustomMarkerInput();
+    else cancelCustomMarkerInput();
   }
 
   function insertBorderBracket(text: BracketText) {
@@ -405,8 +471,9 @@
   export function restore(state: EditorSnapshot, settle = true) {
     cancelForm();
     // A restored normal cursor must not be replaced by a stale border index.
-    if (mode === 'BORDER' || mode === 'PSEUDO_INPUT') mode = 'NORMAL';
+    if (mode === 'BORDER' || mode === 'PSEUDO_INPUT' || mode === 'MARKER_INPUT') mode = 'NORMAL';
     pseudoInput = null;
+    customMarkerInput = null;
     pseudoMessage = '';
     borderIndex = 0;
     inputStart = null;
@@ -436,6 +503,7 @@
   function enterNormal() {
     cancelForm();
     cancelPseudoInput();
+    cancelCustomMarkerInput();
     pseudoMessage = '';
     const wasTranslation = mode === 'TRANSLATION';
     if (mode === 'BORDER') {
@@ -517,6 +585,7 @@
   function clickSlot(x: number, y: number) {
     cancelForm();
     cancelPseudoInput();
+    cancelCustomMarkerInput();
     if (mode === 'BORDER') return;
     onactivate();
     navigate({ x, y });
@@ -658,6 +727,7 @@
       else { handleFormKeydown(event); return; }
     }
     if (mode === 'PSEUDO_INPUT') { handlePseudoKeydown(event); return; }
+    if (mode === 'MARKER_INPUT') { handleCustomMarkerKeydown(event); return; }
     if (matchesKeyboardInput(event, [
       { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
       { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
@@ -698,6 +768,7 @@
     if (mode === 'NORMAL' && handleMarkerKey(event)) return;
     const operation = resolveKeyboardOperation(event, [
       { operation: 'form.start', rules: [{ key: 'f', shiftKey: null, repeat: null }] },
+      { operation: 'marker.customStart', rules: [{ key: '/', shiftKey: null, repeat: null }] },
       { operation: 'history.undo', rules: [{ key: 'u', shiftKey: null, repeat: null }] },
       { operation: 'bracket.insertSquareOpen', rules: [{ key: '[', repeat: null }] },
       { operation: 'bracket.insertSquareClose', rules: [{ key: ']', repeat: null }] },
@@ -729,6 +800,13 @@
     if (operation === 'form.start' && mode === 'NORMAL') {
       event.preventDefault();
       if (matchesKeyboardInput(event, [{ key: 'f' }])) startForm();
+      return;
+    }
+    if (operation === 'marker.customStart' && mode === 'NORMAL') {
+      event.preventDefault();
+      if (!matchesKeyboardInput(event, [
+        { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
+      ])) startCustomMarkerInput();
       return;
     }
     if (operation === 'history.undo') {
@@ -945,7 +1023,7 @@
   }
 
   export function getInputMode(): EntryInputMode {
-    return mode === 'INSERT' || mode === 'TRANSLATION' || mode === 'PSEUDO_INPUT' || mode === 'FORM' ? mode : null;
+    return mode === 'INSERT' || mode === 'TRANSLATION' || mode === 'PSEUDO_INPUT' || mode === 'MARKER_INPUT' || mode === 'FORM' ? mode : null;
   }
 
 </script>
@@ -976,8 +1054,24 @@
   {/if}
 {/snippet}
 
+{#snippet customMarkerField()}
+  {#if customMarkerInput}
+    <input type="text" class="custom-marker-input" value={customMarkerInput.text}
+      style={`left: ${customMarkerInputOffset.left}px; top: ${customMarkerInputOffset.top}px; width: ${customMarkerInputWidth}px`}
+      aria-label="標識を自由入力（空文字で削除）"
+      use:focusOnMount
+      on:input={(event) => { if (customMarkerInput) customMarkerInput.text = event.currentTarget.value; }}
+      on:keydown|stopPropagation={handleCustomMarkerKeydown}
+      on:compositionstart={() => { if (customMarkerInput) customMarkerInput.composing = true; }}
+      on:compositionend={() => { if (customMarkerInput) customMarkerInput.composing = false; }}
+      on:blur={cancelCustomMarkerInput} />
+  {/if}
+{/snippet}
+
 {#snippet slotMarker(id: string)}
-  {#if pendingMarkerSlotId === id}
+  {#if customMarkerInput?.slotId === id}
+    <span class="custom-marker-input-anchor" style={`width: ${customMarkerInputWidth}px`} aria-hidden="true"></span>
+  {:else if pendingMarkerSlotId === id}
     <span class="slot-marker marker-pending" role="status" aria-label={`標識入力: ${markerBuffer}`}>{markerBuffer}</span>
   {:else}
     <span class="slot-marker">{markerLabel(slotById.get(id)?.marker)}</span>
@@ -1015,6 +1109,9 @@
   {#if mode === 'PSEUDO_INPUT'}
     <p class="selection-guide" role="status">疑似トークン: {operationKeyLabel('pseudo.commit')} で確定 / {operationKeyLabel('editor.cancel')}・入力欄から離れると取消（再編集は空文字で削除。関連する下線も削除されます）</p>
   {/if}
+  {#if mode === 'MARKER_INPUT'}
+    <p class="selection-guide" role="status">標識の自由入力: {operationKeyLabel('marker.customCommit')} で確定 / {operationKeyLabel('editor.cancel')}・入力欄から離れると取消（空文字で削除）</p>
+  {/if}
   {#if pseudoMessage}<p class="selection-guide" role="status">{pseudoMessage}</p>{/if}
   {#if mode === 'FORM'}
     <p class="selection-guide" role="status">formモード: {formInputGuide} ・ {operationKeyLabel('form.commit')} / {operationKeyLabel('editor.cancel')} で確定 / 移動キー・{operationKeyLabel('entry.next')}/{operationKeyLabel('entry.previous')} で確定して移動 / {operationKeyLabel('form.clear')} で即時削除 / {operationKeyLabel('form.eraseInput')} で入力を戻す（Dは左右別、T・基礎下線は1つ）</p>
@@ -1051,6 +1148,9 @@
           </div>
         {/if}
         <div class="token-measurements" aria-hidden="true">
+          {#if customMarkerInput}
+            <span class="custom-marker-input-measure">{customMarkerInput.text || ' '}</span>
+          {/if}
           {#each measurements.tokens as { token, labels, splitLabels }}
             <div class="token-measure" class:bracket-open={token.kind === 'bracket-open'} class:bracket-close={token.kind === 'bracket-close'} class:paren-open={token.kind === 'paren-open'} class:paren-close={token.kind === 'paren-close'} class:angle-open={token.kind === 'angle-open'} class:angle-close={token.kind === 'angle-close'} data-token-id={token.id}>
               {@render measureForms(token.slotId)}
@@ -1079,6 +1179,7 @@
         </div>
         <!-- Keep the native input outside row loops: reflow must not restart IME. -->
         {@render pseudoField()}
+        {@render customMarkerField()}
         {#each displayRows as row, rowIndex}
           <div
             class="diagram-row"

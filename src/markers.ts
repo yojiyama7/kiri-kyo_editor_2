@@ -1,12 +1,20 @@
 import { matchesKeyboardInput, type KeyboardInput } from './keyboard.ts';
 import { DEFAULT_MARKER_INPUT_BINDINGS, type InputSequenceBinding } from './inputConfig.ts';
-import { MARKER_LABELS, isMarkerId, type MarkerId } from './inputIds.ts';
+import { MARKER_LABELS, isMarker, isMarkerId, type Marker, type MarkerId } from './inputIds.ts';
 import type { Slot } from './model';
 
-export { MARKER_LABELS, isMarkerId, type MarkerId } from './inputIds.ts';
+export { MARKER_LABELS, isMarker, isMarkerId, type CustomMarker, type Marker, type MarkerId } from './inputIds.ts';
 
-export function markerLabel(marker: MarkerId | undefined): string {
-  return marker === undefined ? '' : MARKER_LABELS[marker];
+export function markerLabel(marker: Marker | undefined): string {
+  return marker === undefined ? '' : typeof marker === 'string' ? MARKER_LABELS[marker] : marker.text;
+}
+
+export function markerFromText(text: string): Marker | undefined {
+  const normalized = text.trim();
+  if (!normalized) return undefined;
+  const known = (Object.entries(MARKER_LABELS) as [MarkerId, string][])
+    .find(([, label]) => label === normalized)?.[0];
+  return known ?? { kind: 'custom', text: normalized };
 }
 
 function matchMarker(buffer: string, bindings: readonly InputSequenceBinding<MarkerId>[]) {
@@ -42,9 +50,14 @@ export function nextMarkerInput(buffer: string, input: KeyboardInput,
   };
 }
 
-export function setSlotMarker(slots: readonly Slot[], slotId: string, marker?: MarkerId): Slot[] {
+function sameMarker(left: Marker | undefined, right: Marker | undefined): boolean {
+  return left === right || !!left && !!right && typeof left !== 'string' && typeof right !== 'string'
+    && left.kind === right.kind && left.text === right.text;
+}
+
+export function setSlotMarker(slots: readonly Slot[], slotId: string, marker?: Marker): Slot[] {
   return slots.map((slot) => {
-    if (slot.id !== slotId || slot.marker === marker) return slot;
+    if (slot.id !== slotId || sameMarker(slot.marker, marker)) return slot;
     if (marker !== undefined) return { ...slot, marker };
     const { marker: _removed, ...empty } = slot;
     return empty;

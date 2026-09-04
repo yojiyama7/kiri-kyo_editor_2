@@ -209,7 +209,9 @@ type EntryDocument = { version: 7; entries: Entry[] };
 ### 組内の保存データ v6
 
 ```ts
-type Slot = { id: string; marker?: MarkerId };
+type CustomMarker = { kind: 'custom'; text: string };
+type Marker = MarkerId | CustomMarker;
+type Slot = { id: string; marker?: Marker };
 type SlotSplit = { slotId: string; leftSlotId: string; rightSlotId: string; kind?: 't' | 'd'; leftForm?: FormId; rightForm?: FormId };
 type TSplit = SlotSplit; // 旧型名との互換用
 type Arrow = { sourceSlotId: string; targetSlotId: string; kind?: 'apposition' };
@@ -237,7 +239,7 @@ type SavedState = {
 
 - Token 配列を英文の正本とし、表示時は単一スペースで連結する
 - Token と Group はそれぞれ UUID 付きの Slot を持つ。TSplit は親の Slot ID と、新しく所有する左右2つの Slot ID を保持する
-- `marker` は `marker.subject` などのキー入力と独立した `MarkerId` を保存する。省略時は空のスロットとする
+- `marker` は `marker.subject` などのキー入力と独立した `MarkerId`、または `{ kind: 'custom', text }` の自由標識を保存する。省略時は空のスロットとする。自由標識の `text` は前後空白のない空でない文字列に限定する
 - Group の `slots` は、構成要素となる Token、Group、またはT化の左右の Slot ID を左から右の順で保持する
 - 下線範囲・矢印の終点ごとの束・描画段は Slot 参照から導出し、保存しない
 - Arrowのkind省略は従来の有向矢印、`apposition`は同格とする。保存バージョンは維持し、識別子のない旧データも従来どおり読み込む。同格のsourceSlotId / targetSlotIdは保存上の参照名であり、方向を表さない
@@ -301,6 +303,9 @@ type SavedState = {
 ## 標識の入力
 
 - Normal モードで現在の Token Slot / Group Slot / T化の左右スロットに標識を1個入力する。既存の標識は置換し、小文字 `x` で標識だけを削除する。大文字 `X` は下線削除・T化解除と依存下線の連鎖削除
+- Normal モードの `/` は、現在の編集可能なスロット内に既存表示を初期値とするネイティブ入力欄を開く。入力中は保存データを変えずに表示幅・折り返しをプレビューし、Enterで確定、Esc・`Ctrl+[`・blurで取消する。IME変換中の確定・取消キー、修飾キー、キーリピート、通常コマンド、組間操作は入力として保護する。Borderモードの `/` は従来どおり疑似トークン作成とする
+- 自由入力の確定時は前後空白を除去し、空なら標識を削除する。既存の表示ラベルと完全一致する文字列は対応する `MarkerId` に変換し、それ以外は自由標識として保存する。自由標識は非空標識として下線分類・幅・矢印接続位置へ反映するが、矢印・同格の意味条件は満たさない。確定時に不適格となった既存矢印を同じ編集内で削除する
+- 自由入力の開始から確定までをUndo / Redo 1回にまとめ、同値確定・取消では履歴を追加しない。丸括弧・山括弧など編集不可スロットと空文では `/` を消費するだけで入力を開始しない
 - `src/inputIds.ts` の意味IDと表示ラベル、`src/inputConfig.ts` の入力シーケンス定義を分離する。入力判定・操作ガイドは入力設定を使い、保存・表示・ドメイン判定は意味IDを使う
 - `+` を入力すると標識 `+` を設定する（`+ → +`）。
 - 対応は `s → S`、`s' → S'`、`V → V`、`1〜5 → (1)〜(5)`、`-3 → (-3)`、`-4 → -(4)`、`-5 → -(5)`、`a → a`、`ad → ad`、`ac → aC`、`nc → nC`、`nC → nC`、`o → O`、`o1 → O1`、`o2 → O2`、`n → n`、`aux → aux`、`pre → 前`、`con → 接`、`ado → 副詞的目的格`、`sad → 文ad`、`nad → 誘導副詞`。大文字・小文字を区別する
@@ -328,4 +333,4 @@ type SavedState = {
 
 ## 今回は実装しない範囲
 
-自由入力の標識、複数標識の保持、組の分割・結合、PDF出力は次の段階で実装する。
+複数標識の保持、組の分割・結合、PDF出力は次の段階で実装する。

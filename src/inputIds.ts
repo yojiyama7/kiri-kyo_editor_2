@@ -32,8 +32,19 @@ export const MARKER_LABELS = {
 export type MarkerId = keyof typeof MARKER_LABELS;
 const MARKER_ID_SET = new Set<string>(Object.keys(MARKER_LABELS));
 
+export type CustomMarker = { kind: 'custom'; text: string };
+export type Marker = MarkerId | CustomMarker;
+
 export function isMarkerId(value: unknown): value is MarkerId {
   return typeof value === 'string' && MARKER_ID_SET.has(value);
+}
+
+export function isMarker(value: unknown): value is Marker {
+  return isMarkerId(value) || !!value && typeof value === 'object'
+    && (value as CustomMarker).kind === 'custom'
+    && typeof (value as CustomMarker).text === 'string'
+    && (value as CustomMarker).text.length > 0
+    && (value as CustomMarker).text.trim() === (value as CustomMarker).text;
 }
 
 export const FORM_LABELS = {

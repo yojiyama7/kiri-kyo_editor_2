@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MARKER_LABELS, isMarkerId, markerLabel, nextMarkerInput as resolveMarkerInput, setSlotMarker } from '../src/markers.ts';
+import { MARKER_LABELS, isMarker, isMarkerId, markerFromText, markerLabel, nextMarkerInput as resolveMarkerInput, setSlotMarker } from '../src/markers.ts';
 import { DEFAULT_MARKER_INPUT_BINDINGS } from '../src/inputConfig.ts';
 import { EditHistory } from '../src/history.ts';
 import { isSavedState } from '../src/model.ts';
@@ -91,6 +91,17 @@ test('matching and persisted IDs are case-sensitive and reject invalid values', 
   assert.equal(markerLabel(undefined), '');
 });
 
+test('free marker text trims input, resolves canonical labels and preserves custom labels', () => {
+  assert.equal(markerFromText('  ad  '), 'marker.adverb');
+  assert.equal(markerFromText(' S '), 'marker.subject');
+  assert.deepEqual(markerFromText('  任意 / 😀  '), { kind: 'custom', text: '任意 / 😀' });
+  assert.equal(markerFromText('   '), undefined);
+  assert.equal(markerLabel({ kind: 'custom', text: '任意' }), '任意');
+  assert.equal(isMarker({ kind: 'custom', text: '任意' }), true);
+  for (const value of [{ kind: 'custom', text: '' }, { kind: 'custom', text: ' x ' },
+    { kind: 'other', text: 'x' }, { kind: 'custom' }]) assert.equal(isMarker(value), false);
+});
+
 test('custom input sequences resolve to the same key-independent marker ID', () => {
   const bindings = [{ sequence: 'z', value: 'marker.subject' }];
   assert.deepEqual(nextMarkerInput('', 'z', bindings), {
@@ -108,6 +119,9 @@ test('markers replace or clear one slot without changing slot references or inpu
   assert.deepEqual(slots[1], { id: 'group', marker: 'marker.subject' });
   assert.deepEqual(setSlotMarker(edited, 'group'), [{ id: 'token' }, { id: 'group' }]);
   assert.equal(setSlotMarker(slots, 'group', 'marker.subject')[1], slots[1]);
+  const custom = setSlotMarker(slots, 'group', { kind: 'custom', text: '自由' });
+  assert.deepEqual(custom[1].marker, { kind: 'custom', text: '自由' });
+  assert.equal(setSlotMarker(custom, 'group', { kind: 'custom', text: '自由' })[1], custom[1]);
   assert.deepEqual(setSlotMarker(slots, 'missing', 'marker.verb'), slots);
 });
 

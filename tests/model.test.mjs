@@ -100,6 +100,9 @@ test('v5 rejects missing or unknown kinds, old versions and invalid references',
     (s) => { s.groups[0].slots = ['missing']; },
     (s) => { s.groups[0].slots = []; },
     (s) => { s.slots[0].marker = 'invalid'; },
+    (s) => { s.slots[0].marker = { kind: 'custom', text: '' }; },
+    (s) => { s.slots[0].marker = { kind: 'custom', text: ' untrimmed ' }; },
+    (s) => { s.slots[0].marker = { kind: 'unknown', text: 'x' }; },
     (s) => { s.slots.push({ ...s.slots[0] }); },
   ];
   for (const mutate of mutations) {
@@ -107,4 +110,12 @@ test('v5 rejects missing or unknown kinds, old versions and invalid references',
     mutate(document);
     assert.equal(isSavedState(document), false);
   }
+});
+
+test('custom markers are valid, non-empty markers without built-in arrow semantics', () => {
+  const document = createExampleDocument();
+  document.slots[0].marker = { kind: 'custom', text: '自由' };
+  document.arrows = [];
+  assert.equal(isSavedState(JSON.parse(JSON.stringify(document))), true);
+  assert.equal(createGroup(document.tokens, document.slots, [document.tokens[0].slotId]).kind, 'composite');
 });

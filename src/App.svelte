@@ -440,6 +440,7 @@
     <span><kbd>{operationKeyLabel('arrow.start')}</kbd> 矢印作成・付け替え（{appositionMarkerLabels} は同格）→ 相手で <kbd>{operationKeyLabel('arrow.commit')}</kbd></span>
     <span><kbd>{operationKeyLabel('arrow.delete')}</kbd> 矢印削除（同格は両端で可）</span>
     <span><kbd>{operationKeyLabel('structure.delete')}</kbd> 下線削除・T/D分割解除</span><span><kbd>{operationKeyLabel('marker.clear')}</kbd> 標識削除</span>
+    <span>Normalで <kbd>{operationKeyLabel('marker.customStart')}</kbd> 標識を自由入力</span>
     <span><kbd>{operationKeyLabel('history.undo')}</kbd> 元に戻す</span><span><kbd>{operationKeyLabel('history.redo')}</kbd> やり直す</span><span><kbd>{operationKeyLabel('editor.cancel')}</kbd> Normal</span>
   </section>
 

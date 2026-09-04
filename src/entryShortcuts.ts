@@ -4,10 +4,10 @@ import { resolveKeyboardOperation, type KeyboardOperationId } from './keyboardOp
 type ShortcutEvent = KeyboardInput;
 export type EntryShortcut = Extract<KeyboardOperationId,
   'entry.next' | 'entry.previous' | 'entry.reorderDown' | 'entry.reorderUp'>;
-export type EntryInputMode = 'INSERT' | 'TRANSLATION' | 'PSEUDO_INPUT' | 'FORM' | null;
+export type EntryInputMode = 'INSERT' | 'TRANSLATION' | 'PSEUDO_INPUT' | 'MARKER_INPUT' | 'FORM' | null;
 
 export function entryShortcut(event: ShortcutEvent, inputMode: EntryInputMode): EntryShortcut | undefined {
-  if (inputMode === 'INSERT' || inputMode === 'PSEUDO_INPUT'
+  if (inputMode === 'INSERT' || inputMode === 'PSEUDO_INPUT' || inputMode === 'MARKER_INPUT'
     || matchesKeyboardInput(event, [
       { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
       { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },

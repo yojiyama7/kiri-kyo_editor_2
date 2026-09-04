@@ -19,11 +19,11 @@ test('input mode and composition/modifier guards also apply to repeated shortcut
   for (const input of [event('n', { ctrlKey: true }), event('p', { ctrlKey: true }),
     event('j', { altKey: true }), event('k', { altKey: true })]) {
     for (const repeat of [false, true]) {
-      for (const mode of ['INSERT', 'PSEUDO_INPUT']) {
+      for (const mode of ['INSERT', 'PSEUDO_INPUT', 'MARKER_INPUT']) {
         assert.equal(entryShortcut({ ...input, repeat }, mode), undefined);
       }
       for (const extra of [{ isComposing: true }, { keyCode: 229 }, { metaKey: true }, { shiftKey: true }, { ctrlKey: true, altKey: true }]) {
-        for (const mode of [null, 'INSERT', 'TRANSLATION', 'PSEUDO_INPUT', 'FORM']) {
+        for (const mode of [null, 'INSERT', 'TRANSLATION', 'PSEUDO_INPUT', 'MARKER_INPUT', 'FORM']) {
           assert.equal(entryShortcut({ ...input, ...extra, repeat }, mode), undefined);
         }
       }

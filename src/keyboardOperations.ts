@@ -5,7 +5,7 @@ export const KEYBOARD_OPERATION_IDS = [
   'editor.cancel', 'history.undo', 'history.redo',
   'cursor.left', 'cursor.right', 'cursor.down', 'cursor.up', 'cursor.rowStart', 'cursor.rowEnd',
   'form.start', 'form.clear', 'form.commit', 'form.eraseInput',
-  'border.start', 'pseudo.start', 'pseudo.commit',
+  'border.start', 'pseudo.start', 'pseudo.commit', 'marker.customStart', 'marker.customCommit',
   'bracket.insertSquareOpen', 'bracket.insertSquareClose',
   'bracket.insertRoundOpen', 'bracket.insertRoundClose',
   'bracket.insertAngleOpen', 'bracket.insertAngleClose',

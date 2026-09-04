@@ -539,6 +539,105 @@ function typePseudo(editor, text) {
   editor.display().pseudoInput.text = text;
 }
 
+function typeCustomMarker(editor, text) {
+  assert.equal(editor.display().mode, 'MARKER_INPUT');
+  editor.display().customMarkerInput.text = text;
+}
+
+test('NORMAL slash edits a free marker interactively and commits one trimmed undoable change', () => {
+  const editor = setup();
+  const { api, key, display, records } = editor;
+  const before = api.snapshot();
+  assert.equal(key('/'), true);
+  assert.equal(api.getInputMode(), 'MARKER_INPUT');
+  assert.equal(display().customMarkerInput.slotId, 'a');
+  assert.equal(display().customMarkerInput.text, '');
+  typeCustomMarker(editor, '  自由 / <>& 😀  ');
+  assert.deepEqual(api.snapshot(), before);
+  assert.equal(records.length, 0);
+  key('Enter');
+  assert.equal(display().mode, 'NORMAL');
+  assert.deepEqual(api.snapshot().document.slots[0].marker, { kind: 'custom', text: '自由 / <>& 😀' });
+  assert.equal(records.length, 1);
+  key('u');
+  assert.deepEqual(api.snapshot(), before);
+  key('r', { ctrlKey: true });
+  assert.deepEqual(api.snapshot().document.slots[0].marker, { kind: 'custom', text: '自由 / <>& 😀' });
+});
+
+test('free marker input reopens existing labels, maps canonical text and deletes on trimmed empty input', () => {
+  const d = initialDocument();
+  d.slots[0].marker = 'marker.adverb';
+  const editor = setup(d);
+  const { api, key, display, records } = editor;
+  key('/');
+  assert.equal(display().customMarkerInput.text, 'ad');
+  typeCustomMarker(editor, '  S  '); key('Enter');
+  assert.equal(api.snapshot().document.slots[0].marker, 'marker.subject');
+  key('/'); typeCustomMarker(editor, '   '); key('Enter');
+  assert.equal(api.snapshot().document.slots[0].marker, undefined);
+  assert.equal(records.length, 2);
+  key('/'); key('Enter');
+  assert.equal(records.length, 2);
+});
+
+test('free marker cancel, restore and IME guards never leak drafts or dispatch editor commands', () => {
+  const editor = setup();
+  const { api, key, display, records, undoCalls } = editor;
+  const before = api.snapshot();
+  key('/'); typeCustomMarker(editor, '取消');
+  display().customMarkerInput.composing = true;
+  key('Enter'); key('Escape');
+  display().customMarkerInput.composing = false;
+  for (const [input, extra] of [['Enter', { isComposing: true }], ['Escape', { keyCode: 229 }],
+    ['Enter', { repeat: true }], ['u', {}], ['r', { ctrlKey: true }], ['/', {}], ['ArrowLeft', {}]]) {
+    key(input, extra);
+    assert.equal(api.getInputMode(), 'MARKER_INPUT');
+  }
+  assert.equal(undoCalls.length, 0);
+  key('Escape');
+  assert.deepEqual(api.snapshot(), before);
+  key('/'); typeCustomMarker(editor, 'stale'); api.restore(before);
+  assert.equal(display().mode, 'NORMAL');
+  assert.equal(display().customMarkerInput, null);
+  assert.deepEqual(api.snapshot(), before);
+  assert.equal(records.length, 0);
+});
+
+test('custom markers have no arrow semantics, while canonical free input retains them', () => {
+  for (const [text, marker, arrowCount] of [['自由', { kind: 'custom', text: '自由' }, 0], ['ad', 'marker.adverb', 1]]) {
+    const d = initialDocument();
+    d.slots[0].marker = 'marker.adverb';
+    d.arrows.push({ sourceSlotId: 'a', targetSlotId: 'b' });
+    const editor = setup(d);
+    editor.key('/'); typeCustomMarker(editor, text); editor.key('Enter');
+    assert.deepEqual(editor.api.snapshot().document.slots[0].marker, marker);
+    assert.equal(editor.api.snapshot().document.arrows.length, arrowCount);
+  }
+});
+
+test('free marker input targets groups and split halves but not virtual brackets or empty documents', () => {
+  const grouped = initialDocument();
+  grouped.groups.push({ id: 'g', slotId: 'g', kind: 'basic', slots: ['a', 'b'] });
+  grouped.slots.push({ id: 'g' });
+  let editor = setup(grouped);
+  editor.key('/');
+  assert.equal(editor.display().customMarkerInput.slotId, 'g');
+
+  const divided = splitSlot(initialDocument(), 'a', 'd');
+  editor = setup(divided);
+  editor.api.restore({ document: divided, cursor: slotPosition(computeLayout(divided.tokens, divided.groups, divided.splits), divided.splits[0].rightSlotId) });
+  editor.key('/');
+  assert.equal(editor.display().customMarkerInput.slotId, divided.splits[0].rightSlotId);
+
+  for (const document of [{ ...initialDocument(), tokens: [], slots: [] }, insertBracket(initialDocument(), 0, '(').document]) {
+    editor = setup(document);
+    assert.equal(editor.key('/'), true);
+    assert.equal(editor.display().mode, 'NORMAL');
+    assert.equal(editor.display().customMarkerInput, null);
+  }
+});
+
 test('actual BORDER handlers block slot edits and store normal return cursors only', () => {
   const { api, key, display, records } = setup();
   const document = api.snapshot().document;

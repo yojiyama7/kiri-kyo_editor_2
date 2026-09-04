@@ -1,10 +1,10 @@
 import { getSlotRanges } from './slotGeometry.ts';
-import { isMarkerId, type MarkerId } from './markers.ts';
+import { isMarker, type Marker } from './markers.ts';
 import { FORM_LABELS, isFormId, type FormId } from './inputIds.ts';
 
 export { FORM_LABELS, isFormId, type FormId } from './inputIds.ts';
 
-export type Slot = { id: string; marker?: MarkerId };
+export type Slot = { id: string; marker?: Marker };
 
 type TokenFields = {
   id: string;
@@ -63,15 +63,15 @@ export type TSplit = SlotSplit;
 // Missing kind denotes the original directed arrow. Apposition endpoints are symmetric.
 export type Arrow = { sourceSlotId: string; targetSlotId: string; kind?: 'apposition' };
 
-export function isArrowMarker(marker: MarkerId | undefined): boolean {
-  return marker !== undefined && ['marker.adjective', 'marker.adverb', 'marker.adverbialObjective', 'marker.sentenceAdverb'].includes(marker);
+export function isArrowMarker(marker: Marker | undefined): boolean {
+  return typeof marker === 'string' && ['marker.adjective', 'marker.adverb', 'marker.adverbialObjective', 'marker.sentenceAdverb'].includes(marker);
 }
 
-export function isAppositionMarker(marker: MarkerId | undefined): boolean {
-  return marker !== undefined && ['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement'].includes(marker);
+export function isAppositionMarker(marker: Marker | undefined): boolean {
+  return typeof marker === 'string' && ['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement'].includes(marker);
 }
 
-export function isAppositionEndpoint(marker: MarkerId | undefined): boolean {
+export function isAppositionEndpoint(marker: Marker | undefined): boolean {
   return marker === undefined || isAppositionMarker(marker);
 }
 
@@ -93,7 +93,7 @@ export function isSlotEditable(document: SlotDocument, slotId: string): boolean 
 }
 
 // A virtual bracket's ad meaning belongs to the token, never to an editable label.
-export function effectiveSlotMarker(document: SlotDocument, slotId: string): MarkerId | undefined {
+export function effectiveSlotMarker(document: SlotDocument, slotId: string): Marker | undefined {
   const slot = document.slots.find(slot => slot.id === slotId);
   if (!slot) return undefined;
   return document.tokens.some(token => isVirtualBracket(token) && token.slotId === slotId)
@@ -146,7 +146,7 @@ export function isSavedState(value: unknown): value is SavedState {
   ) return false;
 
   const validSlots = value.slots.every((slot) => isRecord(slot) && isNonEmptyString(slot.id)
-    && (slot.marker === undefined || isMarkerId(slot.marker)));
+    && (slot.marker === undefined || isMarker(slot.marker)));
   const validTokens = value.tokens.every((token) =>
     isRecord(token)
     && isNonEmptyString(token.id)

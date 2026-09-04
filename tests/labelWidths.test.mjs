@@ -143,6 +143,16 @@ test('token-owned markers and token T/D measurements stay on the token', () => {
   }
 });
 
+test('custom and live free-input labels use the same token and group measurement paths', () => {
+  const d = document('a b', [['g', ['b']]]);
+  d.slots.find(({ id }) => id === 'a').marker = { kind: 'custom', text: '自由標識' };
+  d.slots.find(({ id }) => id === 'g').marker = { kind: 'custom', text: '保存済み' };
+  const saved = measurement(d);
+  assert.deepEqual(saved.tokens[0].labels, ['自由標識']);
+  assert.deepEqual(saved.groups[0].labels, ['保存済み']);
+  assert.deepEqual(measurement(d, 'g', '入力中').groups[0].labels, ['入力中']);
+});
+
 test('arrows attach to the centered expanded group, not the last word', () => {
   const d = document();
   d.arrows.push({ sourceSlotId: 'g', targetSlotId: 'a' });
