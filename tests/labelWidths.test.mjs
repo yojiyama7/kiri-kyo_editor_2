@@ -158,9 +158,10 @@ test('D halves expand independently to their own label widths while T remains sy
     const left = region(v, split.leftSlotId);
     const right = region(v, split.rightSlotId);
     near(width(left), 60);
-    near(width(right), kind === 'd' ? 35 : 60);
+    near(width(right), kind === 'd' ? 30 : 60);
     near(width(source), width(left) + width(right));
     near(left.right, right.left);
+    near(center(source), (v.columns[1].left + v.columns[2].right) / 2);
     v.columns.forEach((column) => near(width(column), 30));
   }
 });
@@ -187,7 +188,25 @@ test('a token D can give one labelled half more room without widening its word c
   near(width(region(v, split.leftSlotId)), 60);
   near(width(region(v, split.rightSlotId)), 16);
   near(width(v.columns[0]), 30);
+  near(center(region(v, 'a')), center(v.columns[0]));
   near(v.rowWidths[0], 60 + 16 + 10 + 30);
+});
+
+test('D total width is the larger of its source and the two measured half widths', () => {
+  const divided = splitSlot(document('a b', []), 'a', 'd');
+  const split = divided.splits[0];
+  const narrow = render(divided, [80, 30], [], 1000, undefined,
+    [[split.leftSlotId, 20], [split.rightSlotId, 30]]);
+  near(width(region(narrow, 'a')), 80);
+  near(width(region(narrow, split.leftSlotId)) + width(region(narrow, split.rightSlotId)), 80);
+  near(center(region(narrow, 'a')), center(narrow.columns[0]));
+
+  const wide = render(divided, [80, 30], [], 1000, undefined,
+    [[split.leftSlotId, 70], [split.rightSlotId, 40]]);
+  near(width(region(wide, 'a')), 110);
+  near(width(region(wide, split.leftSlotId)), 70);
+  near(width(region(wide, split.rightSlotId)), 40);
+  near(center(region(wide, 'a')), center(wide.columns[0]));
 });
 
 test('token-owned markers and token T/D measurements stay on the token', () => {

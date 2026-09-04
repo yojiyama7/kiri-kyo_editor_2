@@ -61,7 +61,7 @@ test('D form regions use independently measured minimum widths', () => {
   const leftForm = forms.find(form => form.slotId === left);
   const rightForm = forms.find(form => form.slotId === right);
   assert.equal(leftForm.right - leftForm.left, 54);
-  assert.equal(rightForm.right - rightForm.left, 30);
+  assert.equal(rightForm.right - rightForm.left, 24);
   assert.equal(leftForm.right, rightForm.left);
   assert.equal(geometry.columns[1].right - geometry.columns[1].left, 60);
 });

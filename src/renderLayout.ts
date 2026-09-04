@@ -117,12 +117,20 @@ function placeRegions(tokens: readonly Token[], groups: readonly Group[], splits
     const ratio = split.kind === 'd' ? split.ratio ?? 0.5 : 0.5;
     const originalLeft = last.left;
     const originalRight = last.right;
-    const middle = originalLeft + (originalRight - originalLeft) * ratio;
+    const originalWidth = originalRight - originalLeft;
     const leftMinimum = splitMinimumWidths.get(split.leftSlotId) ?? 0;
     const rightMinimum = splitMinimumWidths.get(split.rightSlotId) ?? 0;
     const commonMinimum = split.kind === 'd' ? 0 : Math.max(leftMinimum, rightMinimum);
-    const left = originalLeft - Math.max(0, (split.kind === 'd' ? leftMinimum : commonMinimum) - (middle - originalLeft));
-    const right = originalRight + Math.max(0, (split.kind === 'd' ? rightMinimum : commonMinimum) - (originalRight - middle));
+    const totalWidth = split.kind === 'd'
+      ? Math.max(originalWidth, leftMinimum + rightMinimum)
+      : Math.max(originalWidth, commonMinimum * 2);
+    const center = (originalLeft + originalRight) / 2;
+    const left = center - totalWidth / 2;
+    const right = center + totalWidth / 2;
+    const leftWidth = split.kind === 'd'
+      ? Math.min(totalWidth - rightMinimum, Math.max(leftMinimum, totalWidth * ratio))
+      : totalWidth / 2;
+    const middle = left + leftWidth;
     if (left < originalLeft || right > originalRight) {
       last.left = left;
       last.right = right;
