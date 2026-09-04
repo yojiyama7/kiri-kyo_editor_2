@@ -1,5 +1,5 @@
 import { isBasicToken, type SavedState, type SlotSplit } from './model.ts';
-import { getSlotRanges } from './slotGeometry.ts';
+import { getSlotGeometry, getSlotRanges } from './slotGeometry.ts';
 import { setSlotMarker } from './markers.ts';
 import { removeSlotsAndDependents } from './structureDeletion.ts';
 import { normalizeDForms, ownerForm, setOwnerForm } from './formEditing.ts';
@@ -11,10 +11,19 @@ export function canSplit(document: SavedState, slotId: string, kind: 't' | 'd' =
   return getSlotRanges(document.tokens, document.groups, document.splits).get(slotId)?.length === 1;
 }
 
-export function splitSlot(document: SavedState, slotId: string, kind: 't' | 'd' = 't'): SavedState {
+export function splitSlot(document: SavedState, slotId: string, kind: 't' | 'd' = 't', cursorX?: number): SavedState {
   if (!canSplit(document, slotId, kind)) return document;
+  const geometry = getSlotGeometry(document.tokens, document.groups, document.splits);
+  const range = geometry.rangesBySlot.get(slotId)?.[0];
+  const rawRange = geometry.rawRangesBySlot.get(slotId)?.[0];
+  const size = range ? range.end - range.start : 0;
+  const boundary = range && cursorX !== undefined && size > 1
+    ? Math.max(range.start + 1, Math.min(Math.floor(cursorX) + 1, range.end - 1))
+    : undefined;
+  const ratio = boundary === undefined || !rawRange ? 0.5
+    : (geometry.boundaries[boundary] - rawRange.start) / (rawRange.end - rawRange.start);
   const split: SlotSplit = { slotId, leftSlotId: crypto.randomUUID(), rightSlotId: crypto.randomUUID(),
-    ...(kind === 'd' ? { kind } : {}) };
+    ...(kind === 'd' ? { kind, ...(ratio === 0.5 ? {} : { ratio }) } : {}) };
   if (kind === 'd') {
     const form = ownerForm(document, slotId);
     if (form !== undefined) split.leftForm = form;

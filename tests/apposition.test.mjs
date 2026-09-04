@@ -196,7 +196,7 @@ test('rendering uses +3px and shifts an apposition endpoint away from a directed
     assert.equal(stem.x, (region.left + region.right) / 2 + (stem.slotId === 'a' ? 6 : 0));
     assert.equal(stem.y, stem.slotId === 'a' ? 28 : -8);
   }
-  assert.deepEqual(segment.label, { text: '同格', x: (segment.left + segment.right) / 2, y: segment.y + 18 });
+  assert.deepEqual(segment.label, { text: '+', x: (segment.left + segment.right) / 2, y: segment.y + 18 });
   const normal = r.segments.find((s) => !s.kind);
   assert.equal(normal.y, normal.logicalY * 38 + 14);
   assert.equal(normal.stems.filter((s) => s.target).length, 1);
@@ -238,7 +238,7 @@ test('wrapped sparse endpoints attach at final regions and label appears only on
       assert.deepEqual(r.layout, expected);
       assert.equal(r.segments.filter((s) => s.label).length, 1);
       const last = r.segments.at(-1);
-      assert.deepEqual(last.label, { text: '同格', x: (last.left + last.right) / 2, y: last.y + 18 });
+      assert.deepEqual(last.label, { text: '+', x: (last.left + last.right) / 2, y: last.y + 18 });
       const region = r.view.regionsBySlot.get('sparse').at(-1);
       assert.equal(last.row, region.row);
       assert.equal(last.stems.find((s) => s.slotId === 'sparse').x, (region.left + region.right) / 2);

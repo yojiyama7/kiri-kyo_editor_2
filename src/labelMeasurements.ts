@@ -17,9 +17,16 @@ export function measureLabels(tokens: Token[], slots: Slot[], groups: Group[], s
     const split = splitMap.get(id);
     return split ? [[visibleLabel(split.leftSlotId), visibleLabel(split.rightSlotId)]] : [];
   };
+  const splitRatios = (id: string) => {
+    const split = splitMap.get(id);
+    return split ? [split.kind === 'd' ? split.ratio ?? 0.5 : 0.5] : [];
+  };
   return {
-    tokens: tokens.map((token) => ({ token, labels: token.slotId === undefined ? [] : [visibleLabel(token.slotId)], splitLabels: token.slotId === undefined ? [] : splitLabels(token.slotId) })),
+    tokens: tokens.map((token) => ({ token, labels: token.slotId === undefined ? [] : [visibleLabel(token.slotId)],
+      splitLabels: token.slotId === undefined ? [] : splitLabels(token.slotId),
+      splitRatios: token.slotId === undefined ? [] : splitRatios(token.slotId) })),
     groups: groups.map((group) => ({ slotId: group.slotId,
-      labels: splitMap.has(group.slotId) ? [] : [label(group.slotId)], splitLabels: splitLabels(group.slotId) })),
+      labels: splitMap.has(group.slotId) ? [] : [label(group.slotId)], splitLabels: splitLabels(group.slotId),
+      splitRatios: splitRatios(group.slotId) })),
   };
 }

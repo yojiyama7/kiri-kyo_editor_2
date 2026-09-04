@@ -133,6 +133,20 @@ test('T/D group labels are measured on the source and halves follow the expanded
   }
 });
 
+test('unequal D render regions follow their saved ratio', () => {
+  const d = document('a b c d', [['g', ['a', 'b', 'c'], 'ado']]);
+  const divided = splitSlot(d, 'g', 'd', 0);
+  const ratio = divided.splits[0].ratio;
+  assert.equal(ratio, 1 / 3);
+  const v = render(divided, [30, 30, 30, 30], [['g', 300]], 1000);
+  const source = region(v, 'g');
+  const left = region(v, divided.splits[0].leftSlotId);
+  const right = region(v, divided.splits[0].rightSlotId);
+  near(width(left), width(source) * ratio);
+  near(width(right), width(source) * (1 - ratio));
+  near(left.right, right.left);
+});
+
 test('token-owned markers and token T/D measurements stay on the token', () => {
   const d = document('a b', []);
   d.slots[0].marker = 'marker.adverbialObjective';

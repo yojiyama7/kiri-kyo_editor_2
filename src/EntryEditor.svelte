@@ -915,7 +915,7 @@
       const before = snapshot();
       const id = currentSlotId();
       if (id === undefined) return;
-      const next = splitSlot(before.document, id, operation === 'split.t' ? 't' : 'd');
+      const next = splitSlot(before.document, id, operation === 'split.t' ? 't' : 'd', cursorX);
       if (next === before.document) return;
       const split = next.splits.find((split) => split.slotId === id)!;
       applyDocument(next, split.leftSlotId);
@@ -1036,8 +1036,11 @@
 
 {#snippet measureForms(slotId: string | undefined)}
   {@const targets = allFormTargets.filter(target => target.ownerSlotId === slotId)}
+  {@const split = splits.find(split => split.slotId === slotId)}
+  {@const ratio = split?.kind === 'd' ? split.ratio ?? 0.5 : 0.5}
   {#if targets.some(target => visibleFormIds.has(target.slotId) && (formDisplay(target, formSession) || formSession?.slotId === target.slotId))}
-    <div class="form-measure-row" class:form-divided={targets.length === 2}>
+    <div class="form-measure-row" class:form-divided={targets.length === 2}
+      style:grid-template-columns={targets.length === 2 ? `${ratio}fr ${1 - ratio}fr` : undefined}>
       {#each targets as target}
         <span class="token-form" class:form-pending={formSession?.slotId === target.slotId}
           data-form-label={formDisplay(target, formSession)}>{visibleFormIds.has(target.slotId) ? formDisplay(target, formSession) : ''}</span>
@@ -1085,10 +1088,12 @@
 {/snippet}
 
 {#snippet splitControls(split: SlotSplit)}
+  {@const ratio = split.kind === 'd' ? split.ratio ?? 0.5 : 0.5}
   <div class="split-slots" class:d-split={split.kind === 'd'} data-t-source={split.kind === 'd' ? undefined : split.slotId}
     data-split-source={split.slotId} data-split-kind={split.kind ?? 't'}>
     {#each [split.leftSlotId, split.rightSlotId] as id, side}
       <button type="button" class="slot t-half"
+        style={`width: ${(side === 0 ? ratio : 1 - ratio) * 100}%`}
         tabindex="-1"
         class:arrow-source={arrowSourceId === id}
         class:current={currentId === id}
@@ -1159,7 +1164,7 @@
           {#if customMarkerInput}
             <span class="custom-marker-input-measure">{customMarkerInput.text || ' '}</span>
           {/if}
-          {#each measurements.tokens as { token, labels, splitLabels }}
+          {#each measurements.tokens as { token, labels, splitLabels, splitRatios }}
             <div class="token-measure" class:bracket-open={token.kind === 'bracket-open'} class:bracket-close={token.kind === 'bracket-close'} class:paren-open={token.kind === 'paren-open'} class:paren-close={token.kind === 'paren-close'} class:angle-open={token.kind === 'angle-open'} class:angle-close={token.kind === 'angle-close'} data-token-id={token.id}>
               {@render measureForms(token.slotId)}
               {#if token.id === inputTokenId}
@@ -1170,17 +1175,19 @@
               {#each labels as label}
                 <span class="slot-marker">{label}</span>
               {/each}
-              {#each splitLabels as pair}
-                <span class="split-measure">{#each pair as label}<span class="slot-marker">{label || ' '}</span>{/each}</span>
+              {#each splitLabels as pair, splitIndex}
+                {@const ratio = splitRatios[splitIndex]}
+                <span class="split-measure" style:grid-template-columns={`${ratio}fr ${1 - ratio}fr`}>{#each pair as label}<span class="slot-marker">{label || ' '}</span>{/each}</span>
               {/each}
             </div>
           {/each}
-          {#each measurements.groups as { slotId, labels, splitLabels }}
+          {#each measurements.groups as { slotId, labels, splitLabels, splitRatios }}
             <div class="group-measure" data-slot-id={slotId}>
               {@render measureForms(slotId)}
               {#each labels as label}<span class="slot-marker">{label}</span>{/each}
-              {#each splitLabels as pair}
-                <span class="split-measure">{#each pair as label}<span class="slot-marker">{label || ' '}</span>{/each}</span>
+              {#each splitLabels as pair, splitIndex}
+                {@const ratio = splitRatios[splitIndex]}
+                <span class="split-measure" style:grid-template-columns={`${ratio}fr ${1 - ratio}fr`}>{#each pair as label}<span class="slot-marker">{label || ' '}</span>{/each}</span>
               {/each}
             </div>
           {/each}

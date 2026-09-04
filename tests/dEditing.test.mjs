@@ -88,6 +88,31 @@ test('D halves support navigation, range/individual selection and independent gr
   assert.equal(isSavedState(d), true);
 });
 
+test('D uses the cursor boundary for unequal multi-token splits and persists the ratio', () => {
+  const original = initial();
+  const source = addGroup(original, ['a', 'b', 'c']);
+  const d = splitSlot(original, source.slotId, 'd', 0);
+  const split = d.splits[0];
+  assert.equal(split.ratio, 1 / 3);
+  assert.deepEqual(layoutOf(d).rangesBySlot.get(split.leftSlotId), [{ start: 0, end: 1 }]);
+  assert.deepEqual(layoutOf(d).rangesBySlot.get(split.rightSlotId), [{ start: 1, end: 3 }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(d)).splits[0], split);
+  assert.equal(isSavedState(d), true);
+
+  const fromEnd = splitSlot(structuredClone(original), source.slotId, 'd', 2);
+  assert.equal(fromEnd.splits[0].ratio, 2 / 3);
+  const equalSource = initial();
+  const equalGroup = addGroup(equalSource, ['a', 'b', 'c', 'd']);
+  const equal = splitSlot(equalSource, equalGroup.slotId, 'd', 1);
+  assert.equal(equal.splits[0].ratio, undefined);
+
+  const nested = initial();
+  const nestedGroup = addGroup(nested, ['a', 'b']);
+  const withInnerCut = splitSlot(nested, 'a', 't');
+  const nestedD = splitSlot(withInnerCut, nestedGroup.slotId, 'd', 0);
+  assert.equal(nestedD.splits[1].ratio, 0.25);
+});
+
 test('D basic slots block internal editing while composite slots keep normal up navigation', () => {
   const d = initial();
   const basic = addGroup(d, ['a', 'b']);
@@ -159,6 +184,8 @@ test('v6 and single-entry v5 preserve mixed T/D saves including composite D and 
     v => { delete v.splits[1].kind; },
     v => { v.splits[1].slotId = v.splits[0].leftSlotId; },
     v => { v.splits[1].rightSlotId = v.splits[1].leftSlotId; },
+    v => { v.splits[1].ratio = 1; },
+    v => { v.splits[0].ratio = 0.25; },
     v => { v.groups[0].slots = ['a', 'c']; },
     v => { v.groups[1].slots = [v.splits[1].leftSlotId]; },
   ]) {

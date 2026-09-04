@@ -118,7 +118,8 @@ function placeRegions(tokens: readonly Token[], groups: readonly Group[], splits
     if (child) {
       const source = resolve(child.split.slotId);
       const last = source[source.length - 1];
-      const middle = (last.left + last.right) / 2;
+      const ratio = child.split.kind === 'd' ? child.split.ratio ?? 0.5 : 0.5;
+      const middle = last.left + (last.right - last.left) * ratio;
       const left = child.right ? middle : last.left;
       const right = child.right ? last.right : middle;
       const covered = columns.filter((column) => column.row === last.row && column.left < right && column.right > left);

@@ -36,7 +36,8 @@ export function getSlotGeometry(tokens: readonly Token[], groups: readonly Group
       const source = resolve(child.split.slotId);
       if (source.length !== 1) throw new Error('分割には連続した領域が必要です');
       const { start, end } = source[0];
-      const middle = (start + end) / 2;
+      const ratio = child.split.kind === 'd' ? child.split.ratio ?? 0.5 : 0.5;
+      const middle = start + (end - start) * ratio;
       result = [{ start: child.right ? middle : start, end: child.right ? end : middle }];
     } else if (group) {
       result = mergeRanges(group.slots.flatMap(resolve));
@@ -48,6 +49,8 @@ export function getSlotGeometry(tokens: readonly Token[], groups: readonly Group
   }
   for (const group of groups) resolve(group.slotId);
   for (const id of children.keys()) resolve(id);
+  const rawRangesBySlot = new Map([...ranges].map(([id, regions]) =>
+    [id, regions.map((region) => ({ ...region }))]));
   const boundaries = [...new Set([...Array.from({ length: tokens.length + 1 }, (_, x) => x), ...[...ranges.values()].flatMap((regions) =>
     regions.flatMap(({ start, end }) => [start, end]))])].sort((a, b) => a - b);
   const indices = new Map(boundaries.map((boundary, index) => [boundary, index]));
@@ -62,7 +65,7 @@ export function getSlotGeometry(tokens: readonly Token[], groups: readonly Group
   const rangesBySlot = new Map([...ranges].map(([id, regions]) => [id, regions.map(({ start, end }) =>
     ({ start: indices.get(start)!, end: indices.get(end)! }))]));
   const tokenRanges = tokens.map((_, x) => ({ start: indices.get(x)!, end: indices.get(x + 1)! }));
-  return { atoms, rangesBySlot, tokenRanges };
+  return { atoms, rangesBySlot, tokenRanges, rawRangesBySlot, boundaries };
 }
 
 export function getSlotRanges(tokens: readonly Token[], groups: readonly Group[], splits: readonly SlotSplit[] = []) {

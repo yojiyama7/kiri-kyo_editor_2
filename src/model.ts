@@ -58,7 +58,16 @@ export type Group = {
 };
 
 // Missing kind is the original T split representation accepted by the current v6 schema.
-export type SlotSplit = { slotId: string; leftSlotId: string; rightSlotId: string; kind?: 't' | 'd'; leftForm?: FormId; rightForm?: FormId };
+export type SlotSplit = {
+  slotId: string;
+  leftSlotId: string;
+  rightSlotId: string;
+  kind?: 't' | 'd';
+  /** Left-side share of a D split. Omitted means an equal split. */
+  ratio?: number;
+  leftForm?: FormId;
+  rightForm?: FormId;
+};
 export type TSplit = SlotSplit;
 // Missing kind denotes the original directed arrow. Apposition endpoints are symmetric.
 export type Arrow = { sourceSlotId: string; targetSlotId: string; kind?: 'apposition' };
@@ -179,6 +188,8 @@ export function isSavedState(value: unknown): value is SavedState {
   if (!splits.every((split) => isRecord(split) && isNonEmptyString(split.slotId)
     && isNonEmptyString(split.leftSlotId) && isNonEmptyString(split.rightSlotId)
     && (split.kind === undefined || split.kind === 't' || split.kind === 'd')
+    && (split.ratio === undefined || (split.kind === 'd' && typeof split.ratio === 'number'
+      && Number.isFinite(split.ratio) && split.ratio > 0 && split.ratio < 1))
     && (split.leftForm === undefined || (split.kind === 'd' && isFormId(split.leftForm)))
     && (split.rightForm === undefined || (split.kind === 'd' && isFormId(split.rightForm))))) return false;
   const saved = value as SavedState;
