@@ -12,7 +12,7 @@
   import { BRACKET_GUTTER, BRACKET_SLOT_MIN_WIDTH, CLOSE_BRACKET_WIDTH, computeRenderLayout } from './renderLayout';
   import { bracketBorderFromRegion, insertBracket, deleteBracket } from './bracketEditing';
   import { borderFromCursor, cursorFromBorder, moveBorder, borderPosition } from './borderNavigation';
-  import { realSentence, replaceEnglishSentence, pseudoTokenAtSlot, insertPseudoToken, editPseudoToken, pseudoInputAction, type PseudoInputSession } from './pseudoEditing';
+  import { realSentence, replaceEnglishSentence, pseudoTokenAtSlot, insertPseudoToken, insertPseudoTokens, deletePseudoToken, editPseudoToken, splitPseudoInput, pseudoInputAction, type PseudoInputSession } from './pseudoEditing';
   import { pseudoPreview, widthsByToken, inputOverlayOffset } from './pseudoPreview';
   import { measureLabels } from './labelMeasurements';
   import { type EditorSnapshot } from './history';
@@ -395,9 +395,11 @@
     history.record(before, snapshot());
   }
 
-  function deleteBorderBracket(index: number) {
+  function deleteBorderItem(index: number) {
     const before = snapshot();
-    const next = deleteBracket(before.document, index);
+    const token = before.document.tokens[index];
+    const next = token?.kind === 'pseudo' ? deletePseudoToken(before.document, token.id)
+      : deleteBracket(before.document, index);
     if (next === before.document) return;
     ({ tokens, slots, groups, splits, arrows, translation } = next);
     borderIndex = Math.max(0, Math.min(borderIndex - (index < borderIndex ? 1 : 0), tokens.length));
@@ -419,14 +421,18 @@
   function commitPseudoInput() {
     const session = pseudoInput;
     if (!session) return;
-    if (session.kind === 'create' && session.text === '') { cancelPseudoInput(); return; }
+    const parts = session.kind === 'create' ? splitPseudoInput(session.text) : [];
+    if (session.kind === 'create' && parts.length === 0) { cancelPseudoInput(); return; }
     let next: SavedState;
     let cursor: Cursor;
     if (session.kind === 'create') {
-      const result = insertPseudoToken(session.before.document, session.borderIndex, { ...session.token, text: session.text });
+      const inserted = parts.map((text, index) => index === 0 ? { ...session.token, text } : {
+        id: crypto.randomUUID(), slotId: crypto.randomUUID(), kind: 'pseudo' as const, text,
+      });
+      const result = insertPseudoTokens(session.before.document, session.borderIndex, inserted);
       if (!result.ok) { pseudoMessage = result.message; cancelPseudoInput(); return; }
       next = result.document;
-      borderIndex = session.borderIndex + 1;
+      borderIndex = session.borderIndex + inserted.length;
       mode = 'BORDER';
       cursor = cursorFromBorder(computeLayout(next.tokens, next.groups, next.splits, next.arrows), borderIndex);
     } else {
@@ -845,8 +851,8 @@
       if (borderOperation === 'editor.cancel') enterNormal();
       else if (borderOperation === 'pseudo.start') startPseudoInput();
       else if (borderBracketText !== undefined) insertBorderBracket(borderBracketText);
-      else if (borderOperation === 'bracket.deleteBefore') deleteBorderBracket(borderIndex - 1);
-      else if (borderOperation === 'bracket.deleteAfter') deleteBorderBracket(borderIndex);
+      else if (borderOperation === 'bracket.deleteBefore') deleteBorderItem(borderIndex - 1);
+      else if (borderOperation === 'bracket.deleteAfter') deleteBorderItem(borderIndex);
       else borderIndex = moveBorder(borderIndex, tokens.length, event);
       return;
     }
@@ -1104,7 +1110,7 @@
     <p class="selection-guide">個別選択: 移動して {operationKeyLabel('selection.toggle')}、またはクリックで追加・解除 / {operationKeyLabel('selection.commit')} で下線作成 / {operationKeyLabel('editor.cancel')} で取消（{selectedSlots.length} 選択中）</p>
   {/if}
   {#if mode === 'BORDER'}
-    <p class="selection-guide" role="status">境目モード: {operationKeyLabel('cursor.left')} / {operationKeyLabel('cursor.right')} で移動 / {operationKeyLabel('cursor.rowStart')}・{operationKeyLabel('cursor.rowEnd')} で文頭・文末 ・ {operationKeyLabel('pseudo.start')} で疑似トークン作成 / {operationKeyLabel('editor.cancel')} で Normal（境目 {borderIndex + 1} / {tokens.length + 1}）</p>
+    <p class="selection-guide" role="status">境目モード: {operationKeyLabel('cursor.left')} / {operationKeyLabel('cursor.right')} で移動 / {operationKeyLabel('cursor.rowStart')}・{operationKeyLabel('cursor.rowEnd')} で文頭・文末 ・ {operationKeyLabel('pseudo.start')} で疑似トークン作成 / {operationKeyLabel('bracket.deleteBefore')}・{operationKeyLabel('bracket.deleteAfter')} で隣の括弧・疑似トークン削除 / {operationKeyLabel('editor.cancel')} で Normal（境目 {borderIndex + 1} / {tokens.length + 1}）</p>
   {/if}
   {#if mode === 'PSEUDO_INPUT'}
     <p class="selection-guide" role="status">疑似トークン: {operationKeyLabel('pseudo.commit')} で確定 / {operationKeyLabel('editor.cancel')}・入力欄から離れると取消（再編集は空文字で削除。関連する下線も削除されます）</p>

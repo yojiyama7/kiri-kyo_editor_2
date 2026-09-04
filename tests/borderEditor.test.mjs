@@ -774,19 +774,21 @@ test('slash creates one native-input session; drafts do not reach snapshots, and
     assert.equal(records.length, 0);
     key('Enter');
     assert.equal(display().mode, 'BORDER');
-    assert.equal(display().borderIndex, border + 1);
+    assert.equal(display().borderIndex, border + 6);
     const after = api.snapshot();
-    assert.equal(after.document.tokens[border].text, '  日本語 / a b <>& 😀  ');
-    assert.equal(after.document.tokens[border].kind, 'pseudo');
-    assert.equal(after.document.tokens.length, d.tokens.length + 1);
+    assert.deepEqual(after.document.tokens.slice(border, border + 6).map(token => token.text), ['日本語', '/', 'a', 'b', '<>&', '😀']);
+    assert.ok(after.document.tokens.slice(border, border + 6).every(token => token.kind === 'pseudo'));
+    assert.equal(new Set(after.document.tokens.slice(border, border + 6).map(token => token.id)).size, 6);
+    assert.equal(new Set(after.document.tokens.slice(border, border + 6).map(token => token.slotId)).size, 6);
+    assert.equal(after.document.tokens.length, d.tokens.length + 6);
     assert.equal(records.length, 1);
     key('/'); typePseudo(editor, 'second'); key('Enter');
-    assert.equal(display().borderIndex, border + 2);
+    assert.equal(display().borderIndex, border + 7);
     assert.equal(records.length, 2);
     key('u');
     assert.deepEqual(api.snapshot().document, after.document);
     key('r', { ctrlKey: true });
-    assert.equal(api.snapshot().document.tokens[border + 1].text, 'second');
+    assert.equal(api.snapshot().document.tokens[border + 6].text, 'second');
   }
 });
 
@@ -815,7 +817,7 @@ test('empty creation, Esc and leaving discard drafts without changing history or
   const { api, key, display, records } = editor;
   key('a'); key('b'); key('u'); // Establish a redo entry.
   const unchanged = api.snapshot().document;
-  key('b'); key('l'); key('/'); key('Enter');
+  key('b'); key('l'); key('/'); typePseudo(editor, '   \t   '); key('Enter');
   assert.equal(display().mode, 'BORDER');
   assert.equal(display().borderIndex, 1);
   key('/'); typePseudo(editor, '取消'); key('Escape');
@@ -1003,6 +1005,43 @@ test('BORDER deletion removes only neighboring brackets, suppresses repeat and r
   assert.equal(api.snapshot().document.tokens[0].kind, 'bracket-open');
   key('r', { ctrlKey: true });
   assert.deepEqual(api.snapshot().document, initialDocument());
+});
+
+test('BORDER deletion removes neighboring pseudo tokens and their dependents but preserves real tokens', () => {
+  for (const direction of ['Backspace', 'Delete']) {
+    let d = withPseudo();
+    d = splitSlot(d, 'pseudo-slot', 'd');
+    const left = d.splits[0].leftSlotId;
+    d.groups.push({ id: 'dependent', slotId: 'dependent-slot', kind: 'composite', slots: [left, 'b'] });
+    d.slots.push({ id: 'dependent-slot' });
+    const editor = setup(d);
+    const { api, key, display, records } = editor;
+    key('b'); key('l');
+    if (direction === 'Backspace') key('l');
+    key(direction, { repeat: true });
+    assert.deepEqual(api.snapshot().document, d);
+    key(direction);
+    assert.equal(display().mode, 'BORDER');
+    assert.equal(display().borderIndex, 1);
+    assert.deepEqual(api.snapshot().document.tokens.map(token => token.text), ['a', 'b', 'c']);
+    assert.deepEqual(api.snapshot().document.splits, []);
+    assert.deepEqual(api.snapshot().document.groups, []);
+    assert.equal(records.length, 1);
+    key('Delete');
+    assert.deepEqual(api.snapshot().document.tokens.map(token => token.text), ['a', 'b', 'c']);
+    assert.equal(records.length, 1);
+    key('u');
+    assert.deepEqual(api.snapshot().document, d);
+  }
+});
+
+test('NORMAL X does not delete an ungrouped pseudo token', () => {
+  const d = withPseudo();
+  const editor = setup(d);
+  editor.api.restore({ document: d, cursor: { x: 1, y: 0 } });
+  editor.key('X');
+  assert.deepEqual(editor.api.snapshot().document, d);
+  assert.equal(editor.records.length, 0);
 });
 
 test('closing-only documents are unselected and initial/restore/first cursors skip leading closings', () => {

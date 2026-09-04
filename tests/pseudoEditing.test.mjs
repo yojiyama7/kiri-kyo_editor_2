@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { insertPseudoToken, editPseudoToken, pseudoTokenAtSlot, realSentence, replaceEnglishSentence, pseudoInputAction } from '../src/pseudoEditing.ts';
+import { insertPseudoToken, insertPseudoTokens, deletePseudoToken, editPseudoToken, pseudoTokenAtSlot, realSentence, replaceEnglishSentence, splitPseudoInput, pseudoInputAction } from '../src/pseudoEditing.ts';
 import { isSavedState, createGroup } from '../src/model.ts';
 import { computeLayout, slotAt } from '../src/layout.ts';
 import { splitSlot } from '../src/tEditing.ts';
@@ -49,7 +49,33 @@ test('insertion at each border adds exactly one independent token and slot witho
   }
 });
 
-test('spaces and symbols are retained; only the empty string is deletion, not whitespace', () => {
+test('new pseudo input splits whitespace and inserts independent tokens atomically', () => {
+  assert.deepEqual(splitPseudoInput('  日本語\t/  a\nb <>& 😀  '), ['日本語', '/', 'a', 'b', '<>&', '😀']);
+  assert.deepEqual(splitPseudoInput(' \t\n '), []);
+  assert.deepEqual(splitPseudoInput('single'), ['single']);
+
+  const d = initial();
+  const tokens = ['日本語', '/', 'a'].map((text, index) => pseudo(text, `pseudo:${index}`));
+  const result = insertPseudoTokens(d, 1, tokens);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.document.tokens.slice(1, 4), tokens);
+  assert.deepEqual(result.document.slots.slice(-3).map(slot => slot.id), tokens.map(token => token.slotId));
+  assert.equal(isSavedState(result.document), true);
+  assert.deepEqual(d, initial());
+});
+
+test('batch insertion rejects every token atomically when the border is structurally invalid', () => {
+  const d = initial();
+  const basic = group(d, ['a', 'b']);
+  const split = splitSlot(d, basic.slotId, 't');
+  const before = structuredClone(split);
+  const tokens = [pseudo('x', 'pseudo:x'), pseudo('y', 'pseudo:y')];
+  assert.equal(insertPseudoTokens(split, 1, tokens).ok, false);
+  assert.deepEqual(split, before);
+  assert.equal(insertPseudoTokens(split, 0, []).ok, false);
+});
+
+test('reediting retains spaces and symbols; only the empty string is deletion, not whitespace', () => {
   const d = insert(initial(), 1);
   for (const text of ['日本語', '  ', ' x  y ', '<script>alert(1)</script>', 'a/b 😀']) {
     const next = editPseudoToken(d, 'pseudo', text);
@@ -62,6 +88,8 @@ test('spaces and symbols are retained; only the empty string is deletion, not wh
   assert.equal(editPseudoToken(d, 'pseudo', d.tokens[1].text), d);
   assert.equal(editPseudoToken(d, 'token:a', ''), d);
   assert.equal(editPseudoToken(d, 'missing', 'x'), d);
+  assert.equal(deletePseudoToken(d, 'token:a'), d);
+  assert.equal(deletePseudoToken(d, 'missing'), d);
 });
 
 test('ordinary and sparse underlines retain their memberships and skip the inserted pseudo token', () => {
