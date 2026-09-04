@@ -77,7 +77,7 @@ export function isArrowMarker(marker: Marker | undefined): boolean {
 }
 
 export function isAppositionMarker(marker: Marker | undefined): boolean {
-  return typeof marker === 'string' && ['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement'].includes(marker);
+  return typeof marker === 'string' && ['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement', 'marker.plus'].includes(marker);
 }
 
 export function isAppositionEndpoint(marker: Marker | undefined): boolean {

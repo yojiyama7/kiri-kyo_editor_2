@@ -57,7 +57,7 @@
 
   const arrowMarkerLabels = (['marker.adjective', 'marker.adverb', 'marker.adverbialObjective', 'marker.sentenceAdverb'] satisfies MarkerId[])
     .map(markerLabel).join(' / ');
-  const appositionMarkerLabels = (['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement'] satisfies MarkerId[])
+  const appositionMarkerLabels = (['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement', 'marker.plus'] satisfies MarkerId[])
     .map(markerLabel).join(' / ');
   const formInputGuide = DEFAULT_FORM_INPUT_BINDINGS.map(binding => `${binding.sequence} ${FORM_LABELS[binding.value]}`).join(' / ');
   export let onrecord: (before: EditorSnapshot, after: EditorSnapshot) => void;

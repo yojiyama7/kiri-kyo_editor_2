@@ -24,9 +24,9 @@ const render = (d, width = 1000) => {
   return { layout, view, segments: renderArrows(layout, view.regionsBySlot, d.slots) };
 };
 
-test('apposition starts only at exact noun markers and accepts those markers or empty at the other end', () => {
-  for (const source of ['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement']) {
-    for (const target of ['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement', undefined]) {
+test('apposition starts only at its exact markers and accepts those markers or empty at the other end', () => {
+  for (const source of ['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement', 'marker.plus']) {
+    for (const target of ['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement', 'marker.plus', undefined]) {
       const d = mark(mark(initial(), 'a', source), 'b', target);
       const next = connectApposition(d, 'a', 'b');
       assert.deepEqual(next.arrows, [edge('a', 'b')]);
@@ -43,6 +43,9 @@ test('apposition starts only at exact noun markers and accepts those markers or 
   for (const [a, b] of [['a', 'a'], ['missing', 'a'], ['a', 'missing']]) {
     assert.equal(connectApposition(d, a, b), d);
   }
+  const plus = connectApposition(mark(initial(), 'a', 'marker.plus'), 'a', 'b');
+  const saved = { version: 7, entries: [{ id: 'entry', document: plus }] };
+  assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(saved))), saved);
 });
 
 test('replacement from either end removes both prior partners atomically, preserving unrelated directed arrows', () => {
@@ -82,6 +85,11 @@ test('marker pruning preserves empty endpoints but removes disallowed markers at
   assert.equal(pruneArrows(d), d);
   const empty = mark(mark(d, 'a'), 'b');
   assert.equal(pruneArrows(empty), empty);
+  for (const id of ['a', 'b']) {
+    const plus = mark(d, id, 'marker.plus');
+    assert.equal(pruneArrows(plus), plus);
+    assert.equal(isSavedState(plus), true);
+  }
   for (const id of ['a', 'b']) {
     const pending = mark(d, id, 'marker.sentenceAdverb');
     assert.equal(pending.arrows.length, 1);
@@ -196,7 +204,7 @@ test('rendering uses +3px and shifts an apposition endpoint away from a directed
     assert.equal(stem.x, (region.left + region.right) / 2 + (stem.slotId === 'a' ? 6 : 0));
     assert.equal(stem.y, stem.slotId === 'a' ? 28 : -8);
   }
-  assert.deepEqual(segment.label, { text: '+', x: (segment.left + segment.right) / 2, y: segment.y + 18 });
+  assert.deepEqual(segment.label, { text: '同格', x: (segment.left + segment.right) / 2, y: segment.y + 18 });
   const normal = r.segments.find((s) => !s.kind);
   assert.equal(normal.y, normal.logicalY * 38 + 14);
   assert.equal(normal.stems.filter((s) => s.target).length, 1);
@@ -238,7 +246,7 @@ test('wrapped sparse endpoints attach at final regions and label appears only on
       assert.deepEqual(r.layout, expected);
       assert.equal(r.segments.filter((s) => s.label).length, 1);
       const last = r.segments.at(-1);
-      assert.deepEqual(last.label, { text: '+', x: (last.left + last.right) / 2, y: last.y + 18 });
+      assert.deepEqual(last.label, { text: '同格', x: (last.left + last.right) / 2, y: last.y + 18 });
       const region = r.view.regionsBySlot.get('sparse').at(-1);
       assert.equal(last.row, region.row);
       assert.equal(last.stems.find((s) => s.slotId === 'sparse').x, (region.left + region.right) / 2);

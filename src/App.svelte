@@ -45,7 +45,7 @@
     saveError = status.error;
   });
   const updates = createEditorUpdates({ debug: () => {}, save: saveCurrentEntry });
-  const appositionMarkerLabels = (['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement'] satisfies MarkerId[])
+  const appositionMarkerLabels = (['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement', 'marker.plus'] satisfies MarkerId[])
     .map(markerLabel).join(' / ');
 
   $: bulkCount = parseEnglishLines(bulkDraft).length;

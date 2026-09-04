@@ -108,7 +108,7 @@ export function renderArrows(layout: DiagramLayout, regionsBySlot: ReadonlyMap<s
       const right = row === last.row ? last.x : bounds.get(row)!.right;
       result.push({ targetSlotId: arrow.targetSlotId, row, logicalY: arrow.y, y, left, right,
         ...(apposition ? { kind: 'apposition' as const } : {}),
-        ...(apposition && row === last.row ? { label: { text: '+', x: (left + right) / 2, y: y + 18 } } : {}),
+        ...(apposition && row === last.row ? { label: { text: '同格', x: (left + right) / 2, y: y + 18 } } : {}),
         startConnection: row > first.row ? connection(row - first.row - 1) : undefined,
         endConnection: row < last.row ? connection(row - first.row) : undefined,
         stems: endpoints.filter((endpoint) => endpoint.row === row),

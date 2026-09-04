@@ -113,6 +113,18 @@ function setup(initial = initialDocument()) {
 const withPseudo = (index = 1, document = initialDocument()) => insertPseudoToken(document, index,
   { id: 'pseudo', slotId: 'pseudo-slot', kind: 'pseudo', text: '日本語' }).document;
 
+test('plus marker starts apposition and accepts plus at the other endpoint through editor handlers', () => {
+  const initial = initialDocument();
+  initial.slots[1].marker = 'marker.plus';
+  const { api, key, display } = setup(initial);
+  key('+');
+  assert.equal(api.snapshot().document.slots[0].marker, 'marker.plus');
+  key('r');
+  assert.equal(display().mode, 'ARROW');
+  key('l'); key('Enter');
+  assert.deepEqual(api.snapshot().document.arrows, [{ kind: 'apposition', sourceSlotId: 'a', targetSlotId: 'b' }]);
+});
+
 test('FORM handlers preview every code without saving, then commit one undoable edit', () => {
   const formByInput = { b: 'form.base', c: 'form.present', p: 'form.past', pp: 'form.pastParticiple', ing: 'form.ing' };
   for (const [confirm, extra] of [['Enter', {}], ['Escape', {}], ['[', { ctrlKey: true }]]) {
