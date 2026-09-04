@@ -165,8 +165,11 @@ export function computeLayout(tokens: readonly Token[], groups: readonly Group[]
     const start = Math.min(...centers);
     const end = Math.max(...centers);
     const targetX = centers[centers.length - 1];
-    const interval = { start, end, startClosed: kind === 'apposition' || targetX === start,
-      endClosed: kind === 'apposition' || targetX === end };
+    // Directed targets are closed while source-only edges are open. Both ends
+    // of an apposition are displaced like sources when they share an incoming
+    // target, so treat both ends as open for arrow-to-arrow placement too.
+    const interval = { start, end, startClosed: kind !== 'apposition' && targetX === start,
+      endClosed: kind !== 'apposition' && targetX === end };
     const endpointRanges = dependencies.flatMap((id) => rangesBySlot.get(id)!);
     const slotInterval = { start: Math.min(...endpointRanges.map((range) => range.start)),
       end: Math.max(...endpointRanges.map((range) => range.end)), startClosed: true, endClosed: false };

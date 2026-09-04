@@ -15,6 +15,16 @@ const BASIC_TARGET_INSET = 7;
 // Cross the underline 5px above the slot and protrude another 3px.
 const EMPTY_SLOT_EXTENSION = 8;
 
+function offsetToward(region: RenderRegion, x: number, destinationRegion: RenderRegion, destinationX: number): number {
+  // Across wrapping, later rows are to the logical right even if their pixel
+  // X is smaller. Coincident attachments use a rightward fallback.
+  const direction = Math.sign(destinationRegion.row - region.row) || Math.sign(destinationX - x) || 1;
+  const distance = destinationRegion.row === region.row && destinationX !== x
+    ? Math.abs(destinationX - x) / 2 : Infinity;
+  const offset = Math.min(OUTGOING_OFFSET, Math.max(0, region.right - region.left) / 4, distance);
+  return x + direction * offset;
+}
+
 // Coordinates are relative to the top of the row's Y=0 slot, not its text.
 export function renderArrows(layout: DiagramLayout, regionsBySlot: ReadonlyMap<string, RenderRegion[]>,
   slots: readonly Slot[], columns?: readonly RenderRegion[]): RenderArrowSegment[] {
@@ -47,22 +57,19 @@ export function renderArrows(layout: DiagramLayout, regionsBySlot: ReadonlyMap<s
   }
   layout.arrows.forEach((arrow, index) => {
     const apposition = arrow.kind === 'apposition';
-    const targetRegions = regionsBySlot.get(arrow.targetSlotId)!;
-    const targetRegion = targetRegions[targetRegions.length - 1];
-    const targetX = targetRegion.arrowAttachment?.x ?? (targetRegion.left + targetRegion.right) / 2;
-    const endpoints = [...arrow.sourceSlotIds, arrow.targetSlotId].map((slotId) => {
-      const regions = regionsBySlot.get(slotId)!;
-      const region = regions[regions.length - 1];
+    const endpointIds = [...arrow.sourceSlotIds, arrow.targetSlotId];
+    const endpointRegions = endpointIds.map((slotId) => regionsBySlot.get(slotId)!.at(-1)!);
+    const endpointXs = endpointRegions.map((region) => region.arrowAttachment?.x ?? (region.left + region.right) / 2);
+    const targetRegion = endpointRegions[endpointRegions.length - 1];
+    const targetX = endpointXs[endpointXs.length - 1];
+    const endpoints = endpointIds.map((slotId, endpointIndex) => {
+      const region = endpointRegions[endpointIndex];
       const target = !apposition && slotId === arrow.targetSlotId;
       const attachment = region.arrowAttachment;
-      let x = attachment?.x ?? (region.left + region.right) / 2;
-      if (!apposition && !target && incomingSlots.has(slotId)) {
-        // Across wrapping, later rows are to the logical right even if their
-        // pixel X is smaller. Coincident attachments use a rightward fallback.
-        const direction = Math.sign(targetRegion.row - region.row) || Math.sign(targetX - x) || 1;
-        const distance = targetRegion.row === region.row && targetX !== x ? Math.abs(targetX - x) / 2 : Infinity;
-        const offset = Math.min(OUTGOING_OFFSET, Math.max(0, region.right - region.left) / 4, distance);
-        x += direction * offset;
+      let x = endpointXs[endpointIndex];
+      if (!target && incomingSlots.has(slotId)) {
+        const destinationIndex = apposition ? (endpointIndex === 0 ? 1 : 0) : endpointIds.length - 1;
+        x = offsetToward(region, x, endpointRegions[destinationIndex], endpointXs[destinationIndex]);
       }
       const emptySlot = slotById.get(slotId)?.marker === undefined;
       const extendAboveSlot = apposition && emptySlot && !tHalfSlots.has(slotId);

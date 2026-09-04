@@ -137,15 +137,15 @@ test('replacement and deletion each form one undo step and round-trip through v5
   assert.equal(readEntryDocument(crossEntry), undefined);
 });
 
-test('apposition and directed arrows sharing a target remain separate; closed endpoint contact collides', () => {
+test('apposition and directed arrows sharing a target remain separate; open endpoint contact does not collide', () => {
   let d = connectApposition(initial(), 'a', 'b');
   d = connectArrow(mark(d, 'c', 'marker.adverb'), 'c', 'b');
   d = connectArrow(mark(d, 'd', 'marker.adjective'), 'd', 'b');
   const l = layoutOf(d);
   assert.equal(l.arrows.length, 2);
   assert.equal(new Set(l.arrows.map((a) => a.key)).size, 2);
-  assert.deepEqual(l.arrows[0].interval, { start: 0.5, end: 1.5, startClosed: true, endClosed: true });
-  assert.deepEqual(l.arrows.map((a) => a.y), [1, 2]);
+  assert.deepEqual(l.arrows[0].interval, { start: 0.5, end: 1.5, startClosed: false, endClosed: false });
+  assert.deepEqual(l.arrows.map((a) => a.y), [1, 1]);
   assert.deepEqual(l.arrows[1].sourceSlotIds, ['c', 'd']);
   assert.equal(l.arrows[0].kind, 'apposition');
   assert.equal(l.arrows[1].kind, undefined);
@@ -173,18 +173,18 @@ test('apposition follows endpoint levels and full slot envelopes, and preserves 
   assert.ok(higher.arrows[0].y > higher.slotY.get('neighbor'));
 });
 
-test('same-X apposition is a closed point and reversing ends preserves geometry', () => {
+test('same-X apposition is an open point and reversing ends preserves geometry', () => {
   const d = initial();
   d.groups.push({ id: 'g', slotId: 'group', slots: ['a'], kind: 'composite' });
   d.slots.push({ id: 'group', marker: 'marker.noun' });
   const forward = render(connectApposition(d, 'a', 'group'));
   const reverse = render(connectApposition(d, 'group', 'a'));
-  assert.deepEqual(forward.layout.arrows[0].interval, { start: 0.5, end: 0.5, startClosed: true, endClosed: true });
+  assert.deepEqual(forward.layout.arrows[0].interval, { start: 0.5, end: 0.5, startClosed: false, endClosed: false });
   assert.equal(forward.layout.arrows[0].y, 2);
   assert.deepEqual(forward.segments[0].label, reverse.segments[0].label);
 });
 
-test('rendering uses +3px and symmetric marked/empty edges without arrowheads or outgoing offsets', () => {
+test('rendering uses +3px and shifts an apposition endpoint away from a directed target', () => {
   let d = connectApposition(mark(initial(), 'b'), 'a', 'b');
   d = connectArrow(mark(d, 'c', 'marker.adverb'), 'c', 'a');
   const r = render(d);
@@ -193,13 +193,37 @@ test('rendering uses +3px and symmetric marked/empty edges without arrowheads or
   assert.equal(segment.stems.every((s) => !s.target), true);
   for (const stem of segment.stems) {
     const region = r.view.regionsBySlot.get(stem.slotId).at(-1);
-    assert.equal(stem.x, (region.left + region.right) / 2);
+    assert.equal(stem.x, (region.left + region.right) / 2 + (stem.slotId === 'a' ? 6 : 0));
     assert.equal(stem.y, stem.slotId === 'a' ? 28 : -8);
   }
   assert.deepEqual(segment.label, { text: '同格', x: (segment.left + segment.right) / 2, y: segment.y + 18 });
   const normal = r.segments.find((s) => !s.kind);
   assert.equal(normal.y, normal.logicalY * 38 + 14);
   assert.equal(normal.stems.filter((s) => s.target).length, 1);
+  assert.equal(normal.stems.find((s) => s.target).x, 25);
+});
+
+test('apposition offsets are symmetric, capped in narrow slots, and follow row order when wrapped', () => {
+  for (const [sourceSlotId, targetSlotId] of [['a', 'b'], ['b', 'a']]) {
+    let d = connectApposition(initial(), sourceSlotId, targetSlotId);
+    d = connectArrow(mark(d, 'c', 'marker.adverb'), 'c', 'a');
+    const normal = render(d);
+    const apposition = normal.segments.find((s) => s.kind === 'apposition');
+    assert.equal(apposition.stems.find((s) => s.slotId === 'a').x, 31);
+    assert.equal(apposition.left, 31);
+
+    const narrowLayout = layoutOf(d);
+    const narrowView = computeRenderLayout(d.tokens, d.groups, d.splits, d.tokens.map(() => 8), 1000);
+    const narrow = renderArrows(narrowLayout, narrowView.regionsBySlot, d.slots);
+    const region = narrowView.regionsBySlot.get('a').at(-1);
+    assert.equal(narrow.find((s) => s.kind === 'apposition').stems.find((s) => s.slotId === 'a').x,
+      (region.left + region.right) / 2 + 2);
+
+    const wrapped = render(d, 50);
+    const wrappedApposition = wrapped.segments.find((s) => s.kind === 'apposition' && s.stems.some((stem) => stem.slotId === 'a'));
+    const center = (wrapped.view.regionsBySlot.get('a').at(-1).left + wrapped.view.regionsBySlot.get('a').at(-1).right) / 2;
+    assert.equal(wrappedApposition.stems.find((s) => s.slotId === 'a').x, center + 6);
+  }
 });
 
 test('wrapped sparse endpoints attach at final regions and label appears only on the last segment regardless of direction', () => {
