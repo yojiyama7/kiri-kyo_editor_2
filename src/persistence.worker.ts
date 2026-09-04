@@ -15,6 +15,9 @@ worker.onmessage = ({ data: { id, request } }) => {
       if (request.kind === 'write') {
         await store.write(request.batch);
         worker.postMessage({ id });
+      } else if (request.kind === 'discard') {
+        await store.discard();
+        worker.postMessage({ id });
       } else {
         const document = request.kind === 'load' ? await store.load(request) : await store.read();
         worker.postMessage({ id, document });

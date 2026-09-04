@@ -24,6 +24,7 @@
   const history = new EditHistory<DocumentSnapshot>();
   let ready = false;
   let restoring = false;
+  let loadFailed = false;
   let saveError: string | null = null;
   let copyStatus = '';
   let bulkDialog: HTMLDialogElement;
@@ -65,6 +66,7 @@
   async function initialize() {
     if (loading || destroyed) return;
     loading = true;
+    loadFailed = false;
     saveError = null;
     try {
       let legacyRaw: string | null = null;
@@ -88,8 +90,33 @@
       entries = document.entries;
       activeEntryId = entries[0].id;
       ready = true;
-    } catch (error) { if (!destroyed) saveError = String(error); }
+    } catch (error) {
+      if (!destroyed) {
+        loadFailed = true;
+        saveError = String(error);
+      }
+    }
     finally { loading = false; }
+  }
+
+  async function discardSavedData() {
+    if (loading || ready || !loadFailed
+      || !confirm('読み込めない保存データをすべて破棄します。この操作は取り消せません。よろしいですか？')) return;
+    loading = true;
+    saveError = null;
+    try {
+      await client.send({ kind: 'discard' });
+      const keys = [LEGACY_STORAGE_KEY];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith(RECOVERY_PREFIX)) keys.push(key);
+      }
+      for (const key of keys) localStorage.removeItem(key);
+    } catch (error) {
+      if (!destroyed) saveError = `保存データを破棄できませんでした: ${String(error)}`;
+      return;
+    } finally { loading = false; }
+    await initialize();
   }
 
   function currentEditor() { return editors[activeEntryId]; }
@@ -481,7 +508,9 @@
     <span>{entries.length}組</span>
   </footer>
   {#if saveError}
-    <p role="alert">{saveError} <button type="button" on:click={retrySave} disabled={loading}>再試行</button></p>
+    <p role="alert">{saveError} <button type="button" on:click={retrySave} disabled={loading}>再試行</button>
+      {#if loadFailed && !ready}<button type="button" on:click={() => void discardSavedData()} disabled={loading}>保存データを破棄</button>{/if}
+    </p>
   {/if}
 
   <dialog bind:this={bulkDialog} class="bulk-dialog" aria-labelledby="bulk-title" aria-describedby="bulk-description"

@@ -14,21 +14,22 @@ before(() => {
   const source = readFileSync(new URL('../src/App.svelte', import.meta.url), 'utf8').split('<script lang="ts">')[1].split('</script>')[0];
   const ast = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
   const names = ['initialize', 'currentEditor', 'updateEntry', 'receiveState', 'translationActivity',
-    'finishEditing', 'activate', 'moveEntry', 'saveCurrentEntry', 'flushBeforeLeaving', 'retrySave', 'undo'];
+    'finishEditing', 'activate', 'moveEntry', 'saveCurrentEntry', 'flushBeforeLeaving', 'retrySave',
+    'discardSavedData', 'undo'];
   const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text))
     .map(node => node.getText(ast)).join('\n');
   const body = ts.transpileModule(functions, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   createApp = new Function('dependencies', `
     const { initial, editors, persistence, createEditorUpdates, storage: localStorage, client, history,
-      RECOVERY_PREFIX, LEGACY_STORAGE_KEY } = dependencies;
+      RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm } = dependencies;
     let entries = initial, activeEntryId = entries[0].id, rowStates = {}, ready = true, restoring = false;
-    let saveError = null, loading = false, destroyed = false;
+    let saveError = null, loadFailed = false, loading = false, destroyed = false;
     const updates = createEditorUpdates({ debug() {}, save: saveCurrentEntry }, { setTimeout() {}, clearTimeout() {} });
     const tick = async () => {};
     const scrollToActive = async () => {};
     ${body}
-    return { activate, moveEntry, saveCurrentEntry, flushBeforeLeaving, receiveState, initialize, undo,
-      state: () => ({ entries, activeEntryId, ready, saveError }),
+    return { activate, moveEntry, saveCurrentEntry, flushBeforeLeaving, receiveState, initialize, discardSavedData, undo,
+      state: () => ({ entries, activeEntryId, ready, saveError, loadFailed }),
       unready() { ready = false; } };
   `);
 });
@@ -56,7 +57,8 @@ function setup() {
   };
   const client = { async send() { return { version: 7, entries: initial }; } };
   const history = { undo() {}, redo() {} };
-  const app = createApp({ initial, editors, persistence, createEditorUpdates, storage, client, history, RECOVERY_PREFIX, LEGACY_STORAGE_KEY });
+  const app = createApp({ initial, editors, persistence, createEditorUpdates, storage, client, history,
+    RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm: () => true });
   return { app, requests, states, stored, client, history, editors, initial };
 }
 
@@ -132,6 +134,31 @@ test('initialization removes only recovered, unchanged journals and never replac
   client.send = async () => ({ version: 7, entries: initial });
   await app.initialize();
   assert.equal(stored.has(key), false);
+});
+
+test('a failed load can discard IndexedDB, legacy data and every recovery journal before reinitializing', async () => {
+  const { app, client, stored, initial } = setup();
+  app.unready();
+  stored.set(LEGACY_STORAGE_KEY, 'invalid legacy');
+  stored.set(RECOVERY_PREFIX + 'one', 'invalid recovery');
+  stored.set(RECOVERY_PREFIX + 'two', 'other recovery');
+  let failed = true;
+  const requests = [];
+  client.send = async request => {
+    requests.push(request.kind);
+    if (request.kind === 'discard') return undefined;
+    if (failed) { failed = false; throw new Error('以前の保存データを読み込めません。元のデータは保持しています'); }
+    assert.equal(request.legacyRaw, null);
+    assert.deepEqual(request.recovery, []);
+    return { version: 7, entries: initial };
+  };
+  await app.initialize();
+  assert.equal(app.state().loadFailed, true);
+  await app.discardSavedData();
+  assert.deepEqual(requests, ['load', 'discard', 'load']);
+  assert.equal(stored.size, 0);
+  assert.equal(app.state().ready, true);
+  assert.equal(app.state().loadFailed, false);
 });
 
 test('actual Undo restores editor states and persists only changed entries; Redo restores them again', async () => {

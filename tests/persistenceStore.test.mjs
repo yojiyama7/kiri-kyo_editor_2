@@ -32,6 +32,17 @@ test('invalid legacy or recovery never initializes the database with the sample'
   }
 });
 
+test('discard clears entries, metadata and receipts so the store can be initialized again', async () => {
+  const store = createPersistenceStore(new IDBFactory());
+  const first = document(entry('a', 'saved'));
+  await load(store, first);
+  await store.write({ session: 'test', sequence: 1, changes: [change(entry('a', 'edited'))] });
+  await store.discard();
+  assert.equal(await store.read(), undefined);
+  const replacement = document(entry('sample'));
+  assert.deepEqual(await load(store, replacement), replacement);
+});
+
 test('writes alter only the targeted entry and leave all other records and order intact', async () => {
   const store = createPersistenceStore(new IDBFactory());
   const initial = document(...Array.from({ length: 50 }, (_, i) => entry(String(i))));

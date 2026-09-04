@@ -96,6 +96,16 @@ export function createPersistenceStore(factory: IDBFactory, name = DATABASE_NAME
       throw error;
     }
   }
+  async function discard(): Promise<void> {
+    const db = await open();
+    const tx = db.transaction(['entries', 'metadata'], 'readwrite');
+    const done = completed(tx);
+    await Promise.all([
+      request(tx.objectStore('entries').clear()),
+      request(tx.objectStore('metadata').clear()),
+      done,
+    ]);
+  }
   async function load(input: Extract<PersistenceRequest, { kind: 'load' }>): Promise<EntryDocument> {
     const journals = input.recovery.map(parseRecovery);
     let document = await read();
@@ -117,5 +127,5 @@ export function createPersistenceStore(factory: IDBFactory, name = DATABASE_NAME
     }
     return (await read())!;
   }
-  return { read, write, load };
+  return { read, write, load, discard };
 }
