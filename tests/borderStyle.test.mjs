@@ -50,3 +50,19 @@ test('one persistent input is outside row loops and measured from an intrinsic s
   assert.match(css, /\.pseudo-input-anchor\s*\{[^}]*align-self: center/);
   assert.doesNotMatch(css, /input\.pseudo-input\s*\{[^}]*(?:grid-row|grid-column|max-width):/);
 });
+
+test('diagram slot controls do not receive native browser focus', () => {
+  const source = readFileSync(new URL('../src/EntryEditor.svelte', import.meta.url), 'utf8');
+  const controls = [
+    /<button type="button" class="slot t-half"[\s\S]*?on:click/,
+    /<button type="button" class="angle-selection"[\s\S]*?on:click/,
+    /<button\s+type="button"\s+class="slot"[\s\S]*?on:click/,
+    /<button type="button" class="line-segment"[\s\S]*?on:click/,
+  ];
+  for (const pattern of controls) {
+    const control = source.match(pattern)?.[0];
+    assert.ok(control, `missing diagram control: ${pattern}`);
+    assert.match(control, /tabindex="-1"/);
+    assert.match(control, /on:mousedown\|preventDefault/);
+  }
+});

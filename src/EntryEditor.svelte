@@ -1089,6 +1089,7 @@
     data-split-source={split.slotId} data-split-kind={split.kind ?? 't'}>
     {#each [split.leftSlotId, split.rightSlotId] as id, side}
       <button type="button" class="slot t-half"
+        tabindex="-1"
         class:arrow-source={arrowSourceId === id}
         class:current={currentId === id}
         class:current-region={currentId === id}
@@ -1097,6 +1098,7 @@
         disabled={!visibleSlot(displayLayout, id)}
         data-slot-id={id}
         aria-label={`${split.kind === 'd' ? 'D分割' : 'T化'} ${side === 0 ? '左' : '右'}スロット${slotById.get(id)?.marker ? ` 標識: ${markerLabel(slotById.get(id)?.marker)}` : ''}`}
+        on:mousedown|preventDefault
         on:click={() => clickSlotId(id)}>{@render slotMarker(id)}</button>
     {/each}
   </div>
@@ -1216,10 +1218,12 @@
               >
                 {#if isVirtualBracket(token)}
                   <button type="button" class="angle-selection"
+                    tabindex="-1"
                     class:current={currentId === token.slotId}
                     class:selected={selecting && selectedSlotIds.has(token.slotId)}
                     class:arrow-source={arrowSourceId === token.slotId}
                     class:content-selected={highlightedContentSlotIds.has(token.slotId)}
+                    on:mousedown|preventDefault
                     on:click={() => clickSlotId(token.slotId)}
                     aria-label={`${token.kind === 'paren-open' ? '開き丸括弧' : '開き山括弧'}（ad系統・標識入力不可）`}>
                     {#if token.kind === 'angle-open'}
@@ -1251,10 +1255,12 @@
                   <button
                   type="button"
                   class="slot"
+                  tabindex="-1"
                   class:arrow-source={arrowSourceId === token.slotId}
                   class:current={currentId === token.slotId}
                   class:current-region={currentId === token.slotId}
                   class:selected={selecting && selectedSlotIds.has(token.slotId)}
+                  on:mousedown|preventDefault
                   on:click={() => clickSlotId(token.slotId)}
                   aria-label={`${token.kind === 'bracket-open' ? '開き角括弧' : token.text} に対応するスロット${slotById.get(token.slotId)?.marker ? ` 標識: ${markerLabel(slotById.get(token.slotId)?.marker)}` : ''}`}
                   >{@render slotMarker(token.slotId)}</button>
@@ -1275,6 +1281,7 @@
                     </div>
                   {:else}
                     <button type="button" class="line-segment"
+                      tabindex="-1"
                       class:arrow-source={!split && arrowSourceId === placement.group.slotId}
                       class:current={!split && currentId === placement.group.slotId}
                       class:current-region={!split && currentId === placement.group.slotId && currentRegion !== undefined
@@ -1285,6 +1292,7 @@
                       data-slot-id={placement.group.slotId}
                       title={GROUP_KIND_LABELS[placement.group.kind]}
                       aria-label={`${GROUP_KIND_LABELS[placement.group.kind]}${split ? ` ${split.kind === 'd' ? 'D分割' : 'T化'}の継続区間` : ''}${!split && slotById.get(placement.group.slotId)?.marker ? ` 標識: ${markerLabel(slotById.get(placement.group.slotId)?.marker)}` : ''}`}
+                      on:mousedown|preventDefault
                       on:click={() => {
                         if (split) clickSlotId(split.leftSlotId);
                         else {
