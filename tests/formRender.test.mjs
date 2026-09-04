@@ -17,10 +17,11 @@ const grouped = () => {
   d.slots.push({ id: 'g' });
   return d;
 };
-function render(d, available = 500, session = null, widths = new Map()) {
+function render(d, available = 500, session = null, widths = new Map(), splitMinimumWidths = new Map()) {
   const layout = computeLayout(d.tokens, d.groups, d.splits, d.arrows);
   const geometry = computeRenderLayout(d.tokens, d.groups, d.splits, [60, 60, 60], available, widths,
-    session && !d.splits.some(s => s.slotId === session.slotId) ? { slotId: session.slotId, x: session.before.cursor.x } : undefined);
+    session && !d.splits.some(s => s.slotId === session.slotId) ? { slotId: session.slotId, x: session.before.cursor.x } : undefined,
+    { splitMinimumWidths });
   return { layout, geometry, forms: renderForms(d, layout, geometry.regionsBySlot, session) };
 }
 
@@ -50,6 +51,19 @@ test('D labels and pending highlight align with separate halves; T labels span t
     assert.equal(editing.filter(f => f.pending).length, 1);
     assert.equal(editing.find(f => f.pending).slotId, session.slotId);
   }
+});
+
+test('D form regions use independently measured minimum widths', () => {
+  let d = splitSlot(base(), 'b', 'd');
+  const { leftSlotId: left, rightSlotId: right } = d.splits[0];
+  d = setFormAtSlot(setFormAtSlot(d, left, 'form.pastParticiple'), right, 'form.ing');
+  const { forms, geometry } = render(d, 500, null, new Map(), new Map([[left, 54], [right, 24]]));
+  const leftForm = forms.find(form => form.slotId === left);
+  const rightForm = forms.find(form => form.slotId === right);
+  assert.equal(leftForm.right - leftForm.left, 54);
+  assert.equal(rightForm.right - rightForm.left, 30);
+  assert.equal(leftForm.right, rightForm.left);
+  assert.equal(geometry.columns[1].right - geometry.columns[1].left, 60);
 });
 
 test('basic underline and T retain word forms and raise their single form, even when the words are on earlier rows', () => {

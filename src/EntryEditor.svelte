@@ -97,6 +97,7 @@
   let customMarkerInputWidth = 24;
   let customMarkerInputOffset = { left: 4, top: 12 };
   let groupLabelWidths = new Map<string, number>();
+  let splitMinimumWidths = new Map<string, number>();
   let markerBuffer = '';
   let markerSlotId: string | undefined;
   let markerStart: EditorSnapshot | null = null;
@@ -124,7 +125,7 @@
     groupLabelWidths, pendingMarkerSlotId ? { slotId: pendingMarkerSlotId, x: cursorX }
       : formSession && groups.some(group => group.slotId === formSession?.slotId) && !splitBySource.has(formSession.slotId)
         ? { slotId: formSession.slotId, x: cursorX } : undefined,
-    { unclampedTokenId: inputTokenId });
+    { unclampedTokenId: inputTokenId, splitMinimumWidths });
   $: tokenRows = renderLayout.rows;
   $: borderRenderPosition = borderPosition(renderLayout.columns, borderIndex);
   $: pendingMarkerRegions = pendingMarkerSlotId ? renderLayout.regionsBySlot.get(pendingMarkerSlotId) ?? [] : [];
@@ -209,6 +210,7 @@
     diagramWidth,
     tokenWidths,
     groupLabelWidths,
+    splitMinimumWidths,
     tokenRows,
     rowStarts,
     displayRows,
@@ -272,8 +274,17 @@
         if (groupWidths.size !== groupLabelWidths.size || [...groupWidths].some(([id, value]) => groupLabelWidths.get(id) !== value)) {
           groupLabelWidths = groupWidths;
         }
+        const splitElements = node.querySelectorAll<HTMLElement>('.split-half-measure');
+        const splitWidths = new Map<string, number>();
+        for (const element of splitElements) {
+          const id = element.dataset.splitSlotId!;
+          splitWidths.set(id, Math.max(splitWidths.get(id) ?? 0, element.getBoundingClientRect().width));
+        }
+        if (splitWidths.size !== splitMinimumWidths.size
+          || [...splitWidths].some(([id, value]) => splitMinimumWidths.get(id) !== value)) splitMinimumWidths = splitWidths;
         for (const element of elements) observer.observe(element);
         for (const element of groupElements) observer.observe(element);
+        for (const element of splitElements) observer.observe(element);
         for (const element of node.querySelectorAll('.diagram-row')) observer.observe(element);
         if (anchor) observer.observe(anchor);
         if (markerAnchor) observer.observe(markerAnchor);
@@ -1036,17 +1047,29 @@
 
 {#snippet measureForms(slotId: string | undefined)}
   {@const targets = allFormTargets.filter(target => target.ownerSlotId === slotId)}
-  {@const split = splits.find(split => split.slotId === slotId)}
-  {@const ratio = split?.kind === 'd' ? split.ratio ?? 0.5 : 0.5}
-  {#if targets.some(target => visibleFormIds.has(target.slotId) && (formDisplay(target, formSession) || formSession?.slotId === target.slotId))}
-    <div class="form-measure-row" class:form-divided={targets.length === 2}
-      style:grid-template-columns={targets.length === 2 ? `${ratio}fr ${1 - ratio}fr` : undefined}>
+  {#if targets.length !== 2 && targets.some(target => visibleFormIds.has(target.slotId) && (formDisplay(target, formSession) || formSession?.slotId === target.slotId))}
+    <div class="form-measure-row">
       {#each targets as target}
         <span class="token-form" class:form-pending={formSession?.slotId === target.slotId}
           data-form-label={formDisplay(target, formSession)}>{visibleFormIds.has(target.slotId) ? formDisplay(target, formSession) : ''}</span>
       {/each}
     </div>
   {/if}
+{/snippet}
+
+{#snippet splitMeasurement(split: SlotSplit, labels: string[])}
+  <span class="split-measure">
+    {#each [split.leftSlotId, split.rightSlotId] as id, side}
+      {@const target = allFormTargets.find(target => target.slotId === id)}
+      <span class="split-half-measure" data-split-slot-id={id}>
+        {#if target && visibleFormIds.has(id) && (formDisplay(target, formSession) || formSession?.slotId === id)}
+          <span class="token-form" class:form-pending={formSession?.slotId === id}
+            data-form-label={formDisplay(target, formSession)}>{formDisplay(target, formSession)}</span>
+        {/if}
+        <span class="slot-marker">{labels[side] || ' '}</span>
+      </span>
+    {/each}
+  </span>
 {/snippet}
 
 {#snippet pseudoField()}
@@ -1088,12 +1111,11 @@
 {/snippet}
 
 {#snippet splitControls(split: SlotSplit)}
-  {@const ratio = split.kind === 'd' ? split.ratio ?? 0.5 : 0.5}
   <div class="split-slots" class:d-split={split.kind === 'd'} data-t-source={split.kind === 'd' ? undefined : split.slotId}
     data-split-source={split.slotId} data-split-kind={split.kind ?? 't'}>
     {#each [split.leftSlotId, split.rightSlotId] as id, side}
       <button type="button" class="slot t-half"
-        style={`width: ${(side === 0 ? ratio : 1 - ratio) * 100}%`}
+        style={`width: ${(renderLayout.regionsBySlot.get(id)?.at(-1)?.right ?? 0) - (renderLayout.regionsBySlot.get(id)?.at(-1)?.left ?? 0)}px`}
         tabindex="-1"
         class:arrow-source={arrowSourceId === id}
         class:current={currentId === id}
@@ -1164,7 +1186,7 @@
           {#if customMarkerInput}
             <span class="custom-marker-input-measure">{customMarkerInput.text || ' '}</span>
           {/if}
-          {#each measurements.tokens as { token, labels, splitLabels, splitRatios }}
+          {#each measurements.tokens as { token, labels, splitLabels }}
             <div class="token-measure" class:bracket-open={token.kind === 'bracket-open'} class:bracket-close={token.kind === 'bracket-close'} class:paren-open={token.kind === 'paren-open'} class:paren-close={token.kind === 'paren-close'} class:angle-open={token.kind === 'angle-open'} class:angle-close={token.kind === 'angle-close'} data-token-id={token.id}>
               {@render measureForms(token.slotId)}
               {#if token.id === inputTokenId}
@@ -1175,20 +1197,14 @@
               {#each labels as label}
                 <span class="slot-marker">{label}</span>
               {/each}
-              {#each splitLabels as pair, splitIndex}
-                {@const ratio = splitRatios[splitIndex]}
-                <span class="split-measure" style:grid-template-columns={`${ratio}fr ${1 - ratio}fr`}>{#each pair as label}<span class="slot-marker">{label || ' '}</span>{/each}</span>
-              {/each}
+              {#each splitLabels as pair}{@render splitMeasurement(splitBySource.get(token.slotId!)!, pair)}{/each}
             </div>
           {/each}
-          {#each measurements.groups as { slotId, labels, splitLabels, splitRatios }}
+          {#each measurements.groups as { slotId, labels, splitLabels }}
             <div class="group-measure" data-slot-id={slotId}>
               {@render measureForms(slotId)}
               {#each labels as label}<span class="slot-marker">{label}</span>{/each}
-              {#each splitLabels as pair, splitIndex}
-                {@const ratio = splitRatios[splitIndex]}
-                <span class="split-measure" style:grid-template-columns={`${ratio}fr ${1 - ratio}fr`}>{#each pair as label}<span class="slot-marker">{label || ' '}</span>{/each}</span>
-              {/each}
+              {#each splitLabels as pair}{@render splitMeasurement(splitBySource.get(slotId)!, pair)}{/each}
             </div>
           {/each}
         </div>
@@ -1255,7 +1271,12 @@
                 {/if}
                 {#if token.slotId !== undefined && !isVirtualBracket(token)}
                   {#if splitBySource.has(token.slotId)}
-                    <div class="t-token" class:d-split={splitBySource.get(token.slotId)?.kind === 'd'}>{@render splitControls(splitBySource.get(token.slotId)!)}</div>
+                    {@const sourceRegion = renderLayout.regionsBySlot.get(token.slotId)?.[0]}
+                    {@const column = renderLayout.columns[row.start + localIndex]}
+                    <div class="t-token" class:d-split={splitBySource.get(token.slotId)?.kind === 'd'}
+                      style={`left: ${(sourceRegion?.left ?? column.left) - column.left}px; width: ${(sourceRegion?.right ?? column.right) - (sourceRegion?.left ?? column.left)}px`}>
+                      {@render splitControls(splitBySource.get(token.slotId)!)}
+                    </div>
                   {:else if !visibleSlot(displayLayout, token.slotId) || (token.id === inputTokenId && pseudoInput?.kind === 'create')}
                     <span class="slot slot-placeholder" aria-hidden="true"></span>
                   {:else}

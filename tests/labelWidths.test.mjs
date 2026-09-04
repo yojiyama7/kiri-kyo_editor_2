@@ -20,8 +20,9 @@ function document(words = 'a b c d', specs = [['g', ['b', 'c'], 'ado']]) {
   splits: [], arrows: [], translation: '' };
 }
 const measurement = (d, pending, buffer) => measureLabels(d.tokens, d.slots, d.groups, d.splits, d.arrows, pending, buffer);
-const render = (d, widths, labels = [], available = 1000, pending) =>
-  computeRenderLayout(d.tokens, d.groups, d.splits, widths, available, new Map(labels), pending);
+const render = (d, widths, labels = [], available = 1000, pending, splitMinimumWidths = []) =>
+  computeRenderLayout(d.tokens, d.groups, d.splits, widths, available, new Map(labels), pending,
+    { splitMinimumWidths: new Map(splitMinimumWidths) });
 const region = (v, id) => v.regionsBySlot.get(id).at(-1);
 const width = (r) => r.right - r.left;
 const center = (r) => (r.left + r.right) / 2;
@@ -145,6 +146,48 @@ test('unequal D render regions follow their saved ratio', () => {
   near(width(left), width(source) * ratio);
   near(width(right), width(source) * (1 - ratio));
   near(left.right, right.left);
+});
+
+test('D halves expand independently to their own label widths while T remains symmetric', () => {
+  for (const kind of ['d', 't']) {
+    const divided = splitSlot(document(), 'g', kind);
+    const split = divided.splits[0];
+    const v = render(divided, [30, 30, 30, 30], [], 1000, undefined,
+      [[split.leftSlotId, 60], [split.rightSlotId, 30]]);
+    const source = region(v, 'g');
+    const left = region(v, split.leftSlotId);
+    const right = region(v, split.rightSlotId);
+    near(width(left), 60);
+    near(width(right), kind === 'd' ? 35 : 60);
+    near(width(source), width(left) + width(right));
+    near(left.right, right.left);
+    v.columns.forEach((column) => near(width(column), 30));
+  }
+});
+
+test('unequal D expands both sides independently without changing the logical ratio or token widths', () => {
+  const divided = splitSlot(document('a b c d', [['g', ['a', 'b', 'c'], 'ado']]), 'g', 'd', 0);
+  const split = divided.splits[0];
+  const logical = computeLayout(divided.tokens, divided.groups, divided.splits);
+  const v = render(divided, [30, 30, 30, 30], [], 1000, undefined,
+    [[split.leftSlotId, 60], [split.rightSlotId, 90]]);
+  near(width(region(v, split.leftSlotId)), 60);
+  near(width(region(v, split.rightSlotId)), 90);
+  near(width(region(v, 'g')), 150);
+  assert.equal(split.ratio, 1 / 3);
+  assert.deepEqual(computeLayout(divided.tokens, divided.groups, divided.splits), logical);
+  v.columns.forEach((column) => near(width(column), 30));
+});
+
+test('a token D can give one labelled half more room without widening its word column', () => {
+  const divided = splitSlot(document('a b', []), 'a', 'd');
+  const split = divided.splits[0];
+  const v = render(divided, [30, 30], [], 1000, undefined,
+    [[split.leftSlotId, 60], [split.rightSlotId, 16]]);
+  near(width(region(v, split.leftSlotId)), 60);
+  near(width(region(v, split.rightSlotId)), 16);
+  near(width(v.columns[0]), 30);
+  near(v.rowWidths[0], 60 + 16 + 10 + 30);
 });
 
 test('token-owned markers and token T/D measurements stay on the token', () => {

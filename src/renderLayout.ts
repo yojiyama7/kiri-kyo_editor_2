@@ -13,7 +13,7 @@ export type RenderRegion = {
 
 export type LabelWidths = ReadonlyMap<string, number>;
 export type PendingLabel = { slotId: string; x: number };
-export type RenderOptions = { unclampedTokenId?: string };
+export type RenderOptions = { unclampedTokenId?: string; splitMinimumWidths?: LabelWidths };
 type Row = { start: number; end: number };
 type Padding = { before: number; after: number };
 export const BRACKET_GUTTER = 12;
@@ -35,7 +35,7 @@ export function computeRenderLayout(tokens: readonly Token[], groups: readonly G
   // Start afresh on every measurement/resize. Padding is never fed back into
   // measured token widths, so changing or deleting a label cannot accumulate it.
   for (;;) {
-    const view = fitRows(tokens, groups, splits, columnWidths, rows, labelWidths, pendingLabel);
+    const view = fitRows(tokens, groups, splits, columnWidths, rows, labelWidths, pendingLabel, options.splitMinimumWidths);
     const overflowing = rows.findIndex((row, i) => row.end > row.start && view.rowWidths[i] > availableWidth + EPSILON);
     if (overflowing < 0) return view;
     // Only move a boundary left: wrapping terminates, even if one label is wider
@@ -48,9 +48,9 @@ export function computeRenderLayout(tokens: readonly Token[], groups: readonly G
 }
 
 function fitRows(tokens: readonly Token[], groups: readonly Group[], splits: readonly SlotSplit[], widths: readonly number[],
-  rows: Row[], labelWidths: LabelWidths, pendingLabel?: PendingLabel) {
+  rows: Row[], labelWidths: LabelWidths, pendingLabel?: PendingLabel, splitMinimumWidths: LabelWidths = new Map()) {
   const padding: Padding[] = tokens.map(() => ({ before: 0, after: 0 }));
-  let view = placeRegions(tokens, groups, splits, widths, rows, padding, labelWidths, pendingLabel);
+  let view = placeRegions(tokens, groups, splits, widths, rows, padding, labelWidths, pendingLabel, splitMinimumWidths);
   // Resolve one dependency at a time, children before parents. A group's own
   // extra space is reserved only at its outer boundaries, never inside a token.
   // Reservations grow monotonically; later intersecting groups may share them.
@@ -72,12 +72,13 @@ function fitRows(tokens: readonly Token[], groups: readonly Group[], splits: rea
       const { labelRegions, ...result } = view;
       return result;
     }
-    view = placeRegions(tokens, groups, splits, widths, rows, padding, labelWidths, pendingLabel);
+    view = placeRegions(tokens, groups, splits, widths, rows, padding, labelWidths, pendingLabel, splitMinimumWidths);
   }
 }
 
 function placeRegions(tokens: readonly Token[], groups: readonly Group[], splits: readonly SlotSplit[], widths: readonly number[],
-  rows: Row[], padding: Padding[], labelWidths: LabelWidths, pendingLabel?: PendingLabel) {
+  rows: Row[], padding: Padding[], labelWidths: LabelWidths, pendingLabel: PendingLabel | undefined,
+  splitMinimumWidths: LabelWidths) {
   const { rangesBySlot: logicalRangesBySlot, tokenRanges } = getSlotGeometry(tokens, groups, splits);
   const tokenRegions = new Map<string, RenderRegion[]>();
   const columns: RenderRegion[] = [];
@@ -107,55 +108,81 @@ function placeRegions(tokens: readonly Token[], groups: readonly Group[], splits
     [split.leftSlotId, { split, right: false }] as const,
     [split.rightSlotId, { split, right: true }] as const,
   ]));
+  const splitBySource = new Map(splits.map((split) => [split.slotId, split]));
+  const appliedSplits = new Set<string>();
   const visiting = new Set<string>();
+  function applySplit(split: SlotSplit, source: RenderRegion[]): void {
+    if (appliedSplits.has(split.slotId)) return;
+    const last = source[source.length - 1];
+    const ratio = split.kind === 'd' ? split.ratio ?? 0.5 : 0.5;
+    const originalLeft = last.left;
+    const originalRight = last.right;
+    const middle = originalLeft + (originalRight - originalLeft) * ratio;
+    const leftMinimum = splitMinimumWidths.get(split.leftSlotId) ?? 0;
+    const rightMinimum = splitMinimumWidths.get(split.rightSlotId) ?? 0;
+    const commonMinimum = split.kind === 'd' ? 0 : Math.max(leftMinimum, rightMinimum);
+    const left = originalLeft - Math.max(0, (split.kind === 'd' ? leftMinimum : commonMinimum) - (middle - originalLeft));
+    const right = originalRight + Math.max(0, (split.kind === 'd' ? rightMinimum : commonMinimum) - (originalRight - middle));
+    if (left < originalLeft || right > originalRight) {
+      last.left = left;
+      last.right = right;
+      labelRegions.push(last);
+    }
+    const region = (start: number, end: number, logicalRanges: SlotRange[]): RenderRegion => {
+      const covered = columns.filter((column) => column.row === last.row && column.left < end && column.right > start);
+      return { row: last.row, start: covered[0]?.start ?? last.start,
+        end: covered[covered.length - 1]?.end ?? last.end, left: start, right: end, logicalRanges };
+    };
+    regionsBySlot.set(split.leftSlotId, [region(left, middle, logicalRangesBySlot.get(split.leftSlotId)!)]);
+    regionsBySlot.set(split.rightSlotId, [region(middle, right, logicalRangesBySlot.get(split.rightSlotId)!)]);
+    appliedSplits.add(split.slotId);
+  }
   function resolve(id: string): RenderRegion[] {
-    const cached = regionsBySlot.get(id);
-    if (cached) return cached;
-    if (visiting.has(id)) throw new Error(`Cyclic display dependency: ${id}`);
-    visiting.add(id);
     const child = childBySlot.get(id);
-    let result: RenderRegion[] = [];
     if (child) {
       const source = resolve(child.split.slotId);
-      const last = source[source.length - 1];
-      const ratio = child.split.kind === 'd' ? child.split.ratio ?? 0.5 : 0.5;
-      const middle = last.left + (last.right - last.left) * ratio;
-      const left = child.right ? middle : last.left;
-      const right = child.right ? last.right : middle;
-      const covered = columns.filter((column) => column.row === last.row && column.left < right && column.right > left);
-      result = [{ row: last.row, start: covered[0]?.start ?? last.start,
-        end: covered[covered.length - 1]?.end ?? last.end, left, right,
-        logicalRanges: logicalRangesBySlot.get(id)! }];
-    } else {
-      const group = groupBySlot.get(id);
-      if (!group) throw new Error(`Unknown display slot: ${id}`);
-      const regions = group.slots.flatMap(resolve).sort((a, b) => a.row - b.row || a.start - b.start || a.left - b.left);
-      for (const region of regions) {
-        const last = result[result.length - 1];
-        // Decorations may extend outside the selected content. Only logical
-        // adjacency can join regions; a wide label must not fill a sparse gap.
-        const connected = last && last.row === region.row && last.logicalRanges.some((a) =>
-          region.logicalRanges.some((b) => a.start <= b.end && b.start <= a.end));
-        if (connected) {
-          last.left = Math.min(last.left, region.left);
-          last.right = Math.max(last.right, region.right);
-          last.end = Math.max(last.end, region.end);
-          last.logicalRanges = mergeRanges([...last.logicalRanges, ...region.logicalRanges]);
-        } else result.push({ row: region.row, start: region.start, end: region.end, left: region.left, right: region.right,
-          logicalRanges: region.logicalRanges });
-      }
-      const labelled = pendingLabel?.slotId === id
-        ? result.find((region) => region.logicalRanges.some((r) => r.start <= pendingLabel.x && pendingLabel.x < r.end)) ?? result.at(-1)
-        : result.at(-1);
-      if (labelled) {
-        const extra = Math.max(0, (labelWidths.get(id) ?? 0) - (labelled.right - labelled.left)) / 2;
-        labelled.left -= extra;
-        labelled.right += extra;
-        if (extra > 0) labelRegions.push(labelled);
-      }
+      applySplit(child.split, source);
+      return regionsBySlot.get(id)!;
+    }
+    const cached = regionsBySlot.get(id);
+    if (cached) {
+      const split = splitBySource.get(id);
+      if (split) applySplit(split, cached);
+      return cached;
+    }
+    if (visiting.has(id)) throw new Error(`Cyclic display dependency: ${id}`);
+    visiting.add(id);
+    let result: RenderRegion[] = [];
+    const group = groupBySlot.get(id);
+    if (!group) throw new Error(`Unknown display slot: ${id}`);
+    const regions = group.slots.flatMap(resolve).sort((a, b) => a.row - b.row || a.start - b.start || a.left - b.left);
+    for (const region of regions) {
+      const last = result[result.length - 1];
+      // Decorations may extend outside the selected content. Only logical
+      // adjacency can join regions; a wide label must not fill a sparse gap.
+      const connected = last && last.row === region.row && last.logicalRanges.some((a) =>
+        region.logicalRanges.some((b) => a.start <= b.end && b.start <= a.end));
+      if (connected) {
+        last.left = Math.min(last.left, region.left);
+        last.right = Math.max(last.right, region.right);
+        last.end = Math.max(last.end, region.end);
+        last.logicalRanges = mergeRanges([...last.logicalRanges, ...region.logicalRanges]);
+      } else result.push({ row: region.row, start: region.start, end: region.end, left: region.left, right: region.right,
+        logicalRanges: region.logicalRanges });
+    }
+    const labelled = pendingLabel?.slotId === id
+      ? result.find((region) => region.logicalRanges.some((r) => r.start <= pendingLabel.x && pendingLabel.x < r.end)) ?? result.at(-1)
+      : result.at(-1);
+    if (labelled) {
+      const extra = Math.max(0, (labelWidths.get(id) ?? 0) - (labelled.right - labelled.left)) / 2;
+      labelled.left -= extra;
+      labelled.right += extra;
+      if (extra > 0) labelRegions.push(labelled);
     }
     visiting.delete(id);
     regionsBySlot.set(id, result);
+    const split = splitBySource.get(id);
+    if (split) applySplit(split, result);
     return result;
   }
   groups.forEach((group) => resolve(group.slotId));
