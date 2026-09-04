@@ -1,0 +1,22 @@
+{
+  "name": "kiri-kyo-editor-2",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "test": "node tests/run-tests.mjs fast",
+    "test:all": "node tests/run-tests.mjs all",
+    "test:slow": "node tests/run-tests.mjs slow",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.0.0",
+    "fake-indexeddb": "^6.2.5",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0"
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "version": 4,
+  "splits": [],
+  "tokens": [
+    {
+      "id": "d83cbc06-1aa6-4142-8b72-f03d141004fa",
+      "text": "She",
+      "slotId": "f762f780-21de-4d76-bc85-70505b9738cc"
+    },
+    {
+      "id": "8fad055c-fa7b-4d76-aee9-61b512209cc8",
+      "text": "gave",
+      "slotId": "9d12c1e0-fd77-461a-ad8a-26d4a35bd71c"
+    },
+    {
+      "id": "fe87b004-6f30-4a33-83a2-6d834fd6c70a",
+      "text": "the",
+      "slotId": "8509a8dd-a073-4d67-b1c6-a2479464a667"
+    },
+    {
+      "id": "ec6e38c8-bbde-4e63-b405-2730b6006117",
+      "text": "student",
+      "slotId": "f08bdcdd-1cda-4e17-843b-04503eb27704"
+    },
+    {
+      "id": "1ebd5186-718a-4fd0-a78a-6b46f572fbb5",
+      "text": "a",
+      "slotId": "aabc5077-7566-4b91-a592-db1747371500"
+    },
+    {
+      "id": "4a395159-bc4f-4bf6-94af-64a295c89de0",
+      "text": "careful",
+      "slotId": "7d59009d-952d-41aa-8f60-cf144e6bd603"
+    },
+    {
+      "id": "dcdbb60f-1512-4c7f-85a0-0c18dc863bd6",
+      "text": "explanation.",
+      "slotId": "2b6cd641-96d1-4add-bf46-e8b6d85645a7"
+    }
+  ],
+  "slots": [
+    {
+      "id": "f762f780-21de-4d76-bc85-70505b9738cc",
+      "marker": "s"
+    },
+    {
+      "id": "9d12c1e0-fd77-461a-ad8a-26d4a35bd71c",
+      "marker": "4"
+    },
+    {
+      "id": "8509a8dd-a073-4d67-b1c6-a2479464a667"
+    },
+    {
+      "id": "f08bdcdd-1cda-4e17-843b-04503eb27704"
+    },
+    {
+      "id": "aabc5077-7566-4b91-a592-db1747371500"
+    },
+    {
+      "id": "7d59009d-952d-41aa-8f60-cf144e6bd603",
+      "marker": "a"
+    },
+    {
+      "id": "2b6cd641-96d1-4add-bf46-e8b6d85645a7",
+      "marker": "n"
+    },
+    {
+      "id": "c7615c38-176a-4c0b-a03f-22c7d077a51f",
+      "marker": "o2"
+    },
+    {
+      "id": "b68c2357-6e8b-47ce-9bda-5c1569a59e7d"
+    },
+    {
+      "id": "f8863996-a6b4-4b31-9a86-a2ab51957aa4"
+    }
+  ],
+  "groups": [
+    {
+      "id": "69f95695-43f0-4322-ace4-d4078568753a",
+      "slotId": "c7615c38-176a-4c0b-a03f-22c7d077a51f",
+      "kind": "composite",
+      "slots": [
+        "aabc5077-7566-4b91-a592-db1747371500",
+        "7d59009d-952d-41aa-8f60-cf144e6bd603",
+        "2b6cd641-96d1-4add-bf46-e8b6d85645a7"
+      ]
+    },
+    {
+      "id": "fb1a5ce0-0946-48b5-8a5b-5d679c3bda81",
+      "slotId": "b68c2357-6e8b-47ce-9bda-5c1569a59e7d",
+      "kind": "composite",
+      "slots": [
+        "9d12c1e0-fd77-461a-ad8a-26d4a35bd71c",
+        "8509a8dd-a073-4d67-b1c6-a2479464a667",
+        "f08bdcdd-1cda-4e17-843b-04503eb27704",
+        "c7615c38-176a-4c0b-a03f-22c7d077a51f"
+      ]
+    },
+    {
+      "id": "eb419148-42f3-4c4b-9596-c9e31fcb7e8c",
+      "slotId": "f8863996-a6b4-4b31-9a86-a2ab51957aa4",
+      "kind": "composite",
+      "slots": [
+        "8509a8dd-a073-4d67-b1c6-a2479464a667",
+        "f08bdcdd-1cda-4e17-843b-04503eb27704"
+      ]
+    }
+  ],
+  "translation": "彼女はその学生に丁寧な説明をした。"
+}

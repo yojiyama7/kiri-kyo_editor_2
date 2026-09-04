@@ -1,0 +1,1280 @@
+<script lang="ts">
+  import { matchesKeyboardInput } from './keyboard';
+  import { resolveKeyboardOperation, type KeyboardOperationId } from './keyboardOperations';
+  import { createGroup, FORM_LABELS, GROUP_KIND_LABELS, isBracket, type BracketText, type Group, type SavedState, type SlotSplit, type Arrow, isArrowMarker, isAppositionMarker, isAppositionEndpoint } from './model';
+  import { isVirtualBracket, isSlotEditable, effectiveSlotMarker, groupContentSlotIds, type FormId } from './model';
+  import { formIdForInput, formTargetAtSlot, formTargets, setFormAtSlot, nextFormInput, formDisplay, type FormSession } from './formEditing';
+  import { renderForms, visibleFormTargets } from './formRender';
+  import { connectArrow, connectApposition, deleteArrow, pruneArrows } from './arrowEditing';
+  import { renderArrows } from './arrowRender';
+  import { splitSlot, unsplitSlot } from './tEditing';
+  import { deleteGroup } from './structureDeletion';
+  import { BRACKET_GUTTER, BRACKET_SLOT_MIN_WIDTH, CLOSE_BRACKET_WIDTH, computeRenderLayout } from './renderLayout';
+  import { bracketBorderFromRegion, insertBracket, deleteBracket } from './bracketEditing';
+  import { borderFromCursor, cursorFromBorder, moveBorder, borderPosition } from './borderNavigation';
+  import { realSentence, replaceEnglishSentence, pseudoTokenAtSlot, insertPseudoToken, editPseudoToken, pseudoInputAction, type PseudoInputSession } from './pseudoEditing';
+  import { pseudoPreview, widthsByToken, inputOverlayOffset } from './pseudoPreview';
+  import { measureLabels } from './labelMeasurements';
+  import { type EditorSnapshot } from './history';
+  import { enterBasicGroup, settleBasicGroups } from './groupEditing';
+  import type { EntryEditorState } from './entryDocument';
+  import type { EntryInputMode } from './entryShortcuts';
+  import { markerLabel, nextMarkerInput, setSlotMarker, type MarkerId } from './markers';
+  import { DEFAULT_FORM_INPUT_BINDINGS, operationKeyLabel } from './inputConfig';
+  import {
+    type Cursor,
+    computeLayout,
+    slotPosition,
+    relocateCursor,
+    containsX,
+    groupAt,
+    slotAt,
+    regionAt,
+    groupForDeletion,
+    nearestCursor,
+    selectSlotRange,
+    toggleSlotSelection,
+    moveLeft,
+    moveRight,
+    moveVertical as getVerticalCursor,
+    moveToRowEdge as getRowEdgeCursor,
+  } from './layout';
+
+  type Mode = 'NORMAL' | 'BORDER' | 'VISUAL' | 'VISUAL_MULTI' | 'ARROW' | 'INSERT' | 'TRANSLATION' | 'PSEUDO_INPUT' | 'FORM';
+
+  function bracketTextForOperation(operation: KeyboardOperationId | undefined): BracketText | undefined {
+    if (operation === 'bracket.insertSquareOpen') return '[';
+    if (operation === 'bracket.insertSquareClose') return ']';
+    if (operation === 'bracket.insertRoundOpen') return '(';
+    if (operation === 'bracket.insertRoundClose') return ')';
+    if (operation === 'bracket.insertAngleOpen') return '<';
+    if (operation === 'bracket.insertAngleClose') return '>';
+  }
+
+  export let initial: SavedState;
+  export let active = false;
+
+  const arrowMarkerLabels = (['marker.adjective', 'marker.adverb', 'marker.adverbialObjective', 'marker.sentenceAdverb'] satisfies MarkerId[])
+    .map(markerLabel).join(' / ');
+  const appositionMarkerLabels = (['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement'] satisfies MarkerId[])
+    .map(markerLabel).join(' / ');
+  const formInputGuide = DEFAULT_FORM_INPUT_BINDINGS.map(binding => `${binding.sequence} ${FORM_LABELS[binding.value]}`).join(' / ');
+  export let onrecord: (before: EditorSnapshot, after: EditorSnapshot) => void;
+  export let onstate: (state: EntryEditorState) => void;
+  export let onactivate: () => void;
+  export let onundo: (redo: boolean) => void;
+  export let ontranslationactivity: (composing: boolean) => void;
+
+  let tokens = initial.tokens;
+  let slots = initial.slots;
+  let groups: Group[] = initial.groups;
+  let splits: SlotSplit[] = initial.splits;
+  let arrows: Arrow[] = initial.arrows;
+  let arrowSourceId: string | undefined;
+  let arrowKind: Arrow['kind'];
+  let arrowMessage = '';
+  let translation = initial.translation;
+  let translationComposing = false;
+  let sentenceDraft = realSentence(initial.tokens);
+  let mode: Mode = 'NORMAL';
+  let formSession: FormSession | null = null;
+  let pseudoInput: PseudoInputSession | null = null;
+  let pseudoMessage = '';
+  let borderIndex = 0;
+  let cursorX = 0;
+  let cursorY = 0;
+  let anchor: Cursor | null = null;
+  let individualSlots: string[] = [];
+  let activeGroup: Group | undefined;
+  const history = { record: (before: EditorSnapshot, after: EditorSnapshot) => onrecord(before, after) };
+  let inputStart: EditorSnapshot | null = null;
+  let diagramWidth = 1;
+  let tokenWidthById = new Map<string, number>();
+  let pseudoInputWidth = 24;
+  let pseudoInputOffset = { left: 4, top: 12 };
+  let groupLabelWidths = new Map<string, number>();
+  let markerBuffer = '';
+  let markerSlotId: string | undefined;
+  let markerStart: EditorSnapshot | null = null;
+
+  $: layout = computeLayout(tokens, groups, splits, arrows);
+  $: preview = pseudoPreview({ version: 6, tokens, slots, groups, splits, arrows, translation }, pseudoInput);
+  $: displayTokens = preview.document.tokens;
+  $: inputTokenId = preview.inputTokenId;
+  $: displayLayout = computeLayout(displayTokens, groups, splits, arrows);
+  $: allFormTargets = formTargets(preview.document);
+  $: visibleFormIds = new Set(visibleFormTargets(preview.document, displayLayout).map(target => target.slotId));
+  $: tokenWidths = widthsByToken(displayTokens, tokenWidthById);
+
+  $: slotById = new Map(preview.document.slots.map((slot) => [slot.id, slot]));
+  $: splitBySource = new Map(splits.map((split) => [split.slotId, split]));
+  $: currentId = active && mode !== 'BORDER' && mode !== 'PSEUDO_INPUT' ? slotAt(layout, cursorX, cursorY) : undefined;
+  $: currentRegion = mode === 'BORDER' || mode === 'PSEUDO_INPUT' ? undefined : regionAt(layout, cursorX, cursorY);
+  $: snapshotCursor = pseudoInput ? pseudoInput.before.cursor
+    : mode === 'BORDER' ? cursorFromBorder(layout, borderIndex) : { x: cursorX, y: cursorY };
+  $: pendingMarkerSlotId = markerBuffer && markerSlotId === currentId ? markerSlotId : undefined;
+  $: measurements = measureLabels(displayTokens, preview.document.slots, groups, splits, arrows, pendingMarkerSlotId, markerBuffer);
+  $: renderLayout = computeRenderLayout(displayTokens, groups, splits, tokenWidths, diagramWidth,
+    groupLabelWidths, pendingMarkerSlotId ? { slotId: pendingMarkerSlotId, x: cursorX }
+      : formSession && groups.some(group => group.slotId === formSession?.slotId) && !splitBySource.has(formSession.slotId)
+        ? { slotId: formSession.slotId, x: cursorX } : undefined,
+    { unclampedTokenId: inputTokenId });
+  $: tokenRows = renderLayout.rows;
+  $: borderRenderPosition = borderPosition(renderLayout.columns, borderIndex);
+  $: pendingMarkerRegions = pendingMarkerSlotId ? renderLayout.regionsBySlot.get(pendingMarkerSlotId) ?? [] : [];
+  $: pendingMarkerRegion = pendingMarkerRegions.find((region) =>
+    region.logicalRanges.some((range) => range.start <= cursorX && cursorX < range.end))
+    ?? pendingMarkerRegions[pendingMarkerRegions.length - 1];
+  $: rowStarts = new Set(tokenRows.map((row) => row.start));
+  $: highlightedContentSlotIds = new Set(groups
+    .filter((group) => group.slotId === currentId || selectedSlotIds.has(group.slotId))
+    .flatMap((group) => group.slots)
+    .filter((id) => id !== currentId && !selectedSlotIds.has(id)));
+  $: contentHighlights = [...highlightedContentSlotIds].flatMap((id) =>
+    (displayTokens.some(token => isVirtualBracket(token) && token.slotId === id)
+      ? [] : renderLayout.regionsBySlot.get(id) ?? []).map((region) => ({
+      ...region, slotId: id, y: displayLayout.slotY.get(id) ?? 0,
+    })));
+  $: arrowSegments = renderArrows(displayLayout, renderLayout.regionsBySlot, preview.document.slots, renderLayout.columns);
+  $: formRegions = renderForms(preview.document, displayLayout, renderLayout.regionsBySlot, formSession);
+  $: displayRows = tokenRows.map((row, rowIndex) => ({
+    ...row,
+    width: Math.max(diagramWidth, renderLayout.rowWidths[rowIndex]),
+    columns: renderLayout.columns.slice(row.start, row.end + 1).flatMap((column, i, columns) => [
+      column.left - (i ? columns[i - 1].right : 0), column.right - column.left,
+    ]).concat(Math.max(0, renderLayout.rowWidths[rowIndex] - renderLayout.columns[row.end].right)),
+    arrows: arrowSegments.filter((segment) => segment.row === rowIndex),
+    forms: formRegions.filter(region => region.row === rowIndex),
+    formHeight: Math.max(0, ...formRegions.filter(region => region.row === rowIndex).map(region => (region.lane + 1) * 18)),
+    maxY: Math.max(0, ...displayLayout.groups.filter((placement) =>
+      renderLayout.regionsBySlot.get(placement.group.slotId)!.some((region) => region.row === rowIndex)).map((placement) => placement.y),
+      ...arrowSegments.filter((segment) => segment.row === rowIndex).map((segment) => segment.logicalY)),
+    highlights: contentHighlights.filter((region) => region.row === rowIndex),
+    groups: displayLayout.groups.map((placement) => ({
+      placement,
+      segments: renderLayout.regionsBySlot.get(placement.group.slotId)!.filter((region) => region.row === rowIndex),
+    })).filter(({ segments }) => segments.length > 0),
+  }));
+  $: {
+    const cursor = nearestCursor(layout, { x: cursorX, y: cursorY });
+    cursorX = cursor.x;
+    cursorY = cursor.y;
+  }
+  $: activeGroup = mode === 'BORDER' || mode === 'PSEUDO_INPUT' ? undefined : groupAt(layout, cursorX, cursorY)?.group;
+  $: selecting = mode === 'VISUAL' || mode === 'VISUAL_MULTI';
+  $: selectedSlots = mode === 'VISUAL_MULTI' ? individualSlots
+    : anchor === null ? [] : selectSlotRange(layout, anchor, { x: cursorX, y: cursorY });
+  $: selectedSlotIds = new Set(selectedSlots);
+  // Capture reactive dependencies, but assemble the debug payload only on demand.
+  $: getDisplay = () => ({
+    active,
+    mode,
+    cursor: { ...snapshotCursor, slotId: mode === 'BORDER' || mode === 'PSEUDO_INPUT' ? null : slotAt(layout, cursorX, cursorY) ?? null },
+    borderIndex: mode === 'BORDER' ? borderIndex : null,
+    borderPosition: mode === 'BORDER' ? borderRenderPosition : null,
+    currentRegion: currentRegion ?? null,
+    activeGroupId: activeGroup?.id ?? null,
+    anchor,
+    selecting,
+    selectedSlotIds: selectedSlots,
+    highlightedContentSlotIds,
+    individualSlots,
+    arrowSourceId,
+    arrowKind,
+    arrowMessage,
+    arrowSegments,
+    markerInput: { buffer: markerBuffer, slotId: markerSlotId ?? null, active: markerStart !== null },
+    sentenceDraft,
+    pseudoInput,
+    pseudoMessage,
+    formSession,
+    formRegions,
+    previewDocument: pseudoInput ? preview.document : null,
+    displayLayout,
+    inputTokenId,
+    pseudoInputWidth,
+    pseudoInputOffset,
+    textEditing: inputStart !== null || pseudoInput !== null || formSession !== null,
+    document: { version: 6, tokens, slots, groups, splits, arrows, translation },
+    layout,
+    diagramWidth,
+    tokenWidths,
+    groupLabelWidths,
+    tokenRows,
+    rowStarts,
+    displayRows,
+  });
+  $: onstate({
+    snapshot: { document: { version: 6, tokens, slots, groups, splits, arrows, translation }, cursor: snapshotCursor },
+    mode, pendingMarker: markerStart !== null, getDisplay,
+  });
+
+  function clickSlotId(id: string) {
+    const position = slotPosition(layout, id);
+    if (position) clickSlot(position.x, position.y);
+  }
+
+  function visibleSlot(currentLayout: typeof layout, id: string): boolean {
+    const position = slotPosition(currentLayout, id);
+    return !!position && slotAt(currentLayout, position.x, position.y) === id;
+  }
+
+  function measureDiagram(node: HTMLElement, _state: unknown) {
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        // Reserve room for endpoint dots and the selection outline on both sides.
+        const width = Math.max(1, node.clientWidth - 8);
+        if (diagramWidth !== width) diagramWidth = width;
+        const elements = node.querySelectorAll<HTMLElement>('.token-measure');
+        const widths = new Map(Array.from(elements, (element) =>
+          [element.dataset.tokenId!, element.getBoundingClientRect().width] as const));
+        if (widths.size !== tokenWidthById.size || [...widths].some(([id, value]) => tokenWidthById.get(id) !== value)) {
+          tokenWidthById = widths;
+        }
+        // Intrinsic mirror only: never measure the input or its sized anchor as
+        // the source of the next width, which would create a feedback loop.
+        const mirror = node.querySelector<HTMLElement>('.pseudo-input-measure');
+        if (mirror) {
+          const width = mirror.getBoundingClientRect().width;
+          if (pseudoInputWidth !== width) pseudoInputWidth = width;
+        }
+        const anchor = node.querySelector<HTMLElement>('.pseudo-input-anchor');
+        if (anchor) {
+          const offset = inputOverlayOffset(anchor.getBoundingClientRect(), node.getBoundingClientRect(),
+            node.scrollLeft, node.scrollTop, node.clientLeft, node.clientTop);
+          if (offset.left !== pseudoInputOffset.left || offset.top !== pseudoInputOffset.top) pseudoInputOffset = offset;
+        }
+        const groupElements = node.querySelectorAll<HTMLElement>('.group-measure');
+        const groupWidths = new Map(Array.from(groupElements, (element) =>
+          [element.dataset.slotId!, element.getBoundingClientRect().width] as const));
+        if (groupWidths.size !== groupLabelWidths.size || [...groupWidths].some(([id, value]) => groupLabelWidths.get(id) !== value)) {
+          groupLabelWidths = groupWidths;
+        }
+        for (const element of elements) observer.observe(element);
+        for (const element of groupElements) observer.observe(element);
+        for (const element of node.querySelectorAll('.diagram-row')) observer.observe(element);
+        if (anchor) observer.observe(anchor);
+      });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    measure();
+    return {
+      update(_state: unknown) {
+        observer.disconnect();
+        observer.observe(node);
+        measure();
+      },
+      destroy() {
+        cancelAnimationFrame(frame);
+        observer.disconnect();
+      },
+    };
+  }
+
+  function focusOnMount(node: HTMLElement) {
+    node.focus();
+  }
+
+  function sentenceFromTokens(): string {
+    return realSentence(tokens);
+  }
+
+  function startPseudoInput() {
+    const before = snapshot();
+    pseudoMessage = '';
+    if (mode === 'BORDER') {
+      const token = { id: crypto.randomUUID(), slotId: crypto.randomUUID(), kind: 'pseudo' as const, text: ' ' };
+      const result = insertPseudoToken(before.document, borderIndex, token);
+      if (!result.ok) { pseudoMessage = result.message; return; }
+      pseudoInput = { kind: 'create', before, borderIndex, token, text: '', composing: false };
+    } else {
+      const token = pseudoTokenAtSlot(before.document, currentSlotId());
+      if (!token) return;
+      pseudoInput = { kind: 'edit', before, tokenId: token.id, text: token.text, composing: false };
+    }
+    mode = 'PSEUDO_INPUT';
+  }
+
+  function insertBorderBracket(text: BracketText) {
+    const before = snapshot();
+    const result = insertBracket(before.document, borderIndex, text);
+    if (!result.ok) { pseudoMessage = result.message; return; }
+    ({ tokens, slots, groups, splits, arrows, translation } = result.document);
+    borderIndex += 1;
+    history.record(before, snapshot());
+  }
+
+  function insertRegionBracket(text: BracketText) {
+    pseudoMessage = '';
+    const before = snapshot();
+    const beforeLayout = computeLayout(tokens, groups, splits, arrows);
+    const border = bracketBorderFromRegion(tokens, beforeLayout, before.cursor, text);
+    if (!border.ok) { pseudoMessage = border.message; return; }
+    const result = insertBracket(before.document, border.index, text);
+    if (!result.ok) { pseudoMessage = result.message; return; }
+    const next = result.document;
+    const nextLayout = computeLayout(next.tokens, next.groups, next.splits, next.arrows);
+    const slotId = slotAt(beforeLayout, before.cursor.x, before.cursor.y)!;
+    const atom = beforeLayout.atoms[before.cursor.x];
+    // Insertion preserves each existing token's cuts. Anchor within that token:
+    // split atom IDs contain absolute token offsets and can change on insertion.
+    const tokenIndex = atom.tokenIndex + (atom.tokenIndex >= border.index ? 1 : 0);
+    const offset = before.cursor.x - beforeLayout.tokenRanges[atom.tokenIndex].start;
+    ({ tokens, slots, groups, splits, arrows, translation } = next);
+    cursorX = nextLayout.tokenRanges[tokenIndex].start + offset;
+    cursorY = nextLayout.slotY.get(slotId)!;
+    history.record(before, snapshot());
+  }
+
+  function deleteBorderBracket(index: number) {
+    const before = snapshot();
+    const next = deleteBracket(before.document, index);
+    if (next === before.document) return;
+    ({ tokens, slots, groups, splits, arrows, translation } = next);
+    borderIndex = Math.max(0, Math.min(borderIndex - (index < borderIndex ? 1 : 0), tokens.length));
+    history.record(before, snapshot());
+  }
+
+  function cancelPseudoInput() {
+    const session = pseudoInput;
+    if (!session) return;
+    pseudoInput = null;
+    cursorX = session.before.cursor.x;
+    cursorY = session.before.cursor.y;
+    if (session.kind === 'create') {
+      borderIndex = session.borderIndex;
+      mode = 'BORDER';
+    } else mode = 'NORMAL';
+  }
+
+  function commitPseudoInput() {
+    const session = pseudoInput;
+    if (!session) return;
+    if (session.kind === 'create' && session.text === '') { cancelPseudoInput(); return; }
+    let next: SavedState;
+    let cursor: Cursor;
+    if (session.kind === 'create') {
+      const result = insertPseudoToken(session.before.document, session.borderIndex, { ...session.token, text: session.text });
+      if (!result.ok) { pseudoMessage = result.message; cancelPseudoInput(); return; }
+      next = result.document;
+      borderIndex = session.borderIndex + 1;
+      mode = 'BORDER';
+      cursor = cursorFromBorder(computeLayout(next.tokens, next.groups, next.splits, next.arrows), borderIndex);
+    } else {
+      next = editPseudoToken(session.before.document, session.tokenId, session.text);
+      const index = session.before.document.tokens.findIndex((token) => token.id === session.tokenId);
+      cursor = session.text === '' ? cursorFromBorder(computeLayout(next.tokens, next.groups, next.splits, next.arrows), index)
+        : session.before.cursor;
+      mode = 'NORMAL';
+    }
+    pseudoInput = null;
+    ({ tokens, slots, groups, splits, arrows, translation } = next);
+    cursorX = cursor.x;
+    cursorY = cursor.y;
+    if (next !== session.before.document) history.record(session.before, snapshot());
+  }
+
+  function handlePseudoKeydown(event: KeyboardEvent) {
+    if (!pseudoInput) return;
+    // Preserve the existing Ctrl+r reload guard without running document redo.
+    if (resolveKeyboardOperation(event, [
+      { operation: 'history.redo', rules: [{ key: 'r', ctrlKey: true, repeat: null }] },
+    ]) === 'history.redo') event.preventDefault();
+    const action = pseudoInputAction(event, pseudoInput.composing);
+    if (!action) return;
+    event.preventDefault();
+    if (action === 'pseudo.commit') commitPseudoInput();
+    else cancelPseudoInput();
+  }
+
+  export function canSave(leaving = false): boolean {
+    return markerStart === null && (leaving || !translationComposing);
+  }
+
+  export function snapshot(): EditorSnapshot {
+    const currentLayout = computeLayout(tokens, groups, splits, arrows);
+    return structuredClone({
+      document: { version: 6, tokens, slots, groups, splits, arrows, translation },
+      cursor: pseudoInput ? pseudoInput.before.cursor : mode === 'BORDER' ? cursorFromBorder(currentLayout, borderIndex) : nearestCursor(currentLayout, { x: cursorX, y: cursorY }),
+    });
+  }
+
+  export function restore(state: EditorSnapshot, settle = true) {
+    cancelForm();
+    // A restored normal cursor must not be replaced by a stale border index.
+    if (mode === 'BORDER' || mode === 'PSEUDO_INPUT') mode = 'NORMAL';
+    pseudoInput = null;
+    pseudoMessage = '';
+    borderIndex = 0;
+    inputStart = null;
+    markerStart = null;
+    markerSlotId = undefined;
+    markerBuffer = '';
+    // Inactive entries can retain an open basic group from an earlier edit.
+    // Restoring another entry must not reclassify their saved structures.
+    const result = settle ? settleBasicGroups(state.document, state.cursor) : state;
+    ({ tokens, slots, groups, splits, arrows, translation } = result.document);
+    cursorX = result.cursor.x;
+    cursorY = result.cursor.y;
+    sentenceDraft = sentenceFromTokens();
+    enterNormal();
+  }
+
+  function commitSentence() {
+    const before = snapshot().document;
+    const next = replaceEnglishSentence(before, sentenceDraft);
+    sentenceDraft = realSentence(next.tokens);
+    if (next === before) return;
+    ({ tokens, slots, groups, splits, arrows } = next);
+    cursorX = Math.min(cursorX, Math.max(0, tokens.length - 1));
+    cursorY = 0;
+  }
+
+  function enterNormal() {
+    cancelForm();
+    cancelPseudoInput();
+    pseudoMessage = '';
+    const wasTranslation = mode === 'TRANSLATION';
+    if (mode === 'BORDER') {
+      const cursor = cursorFromBorder(computeLayout(tokens, groups, splits, arrows), borderIndex);
+      cursorX = cursor.x;
+      cursorY = cursor.y;
+    }
+    borderIndex = 0;
+    finishMarkerInput();
+    if (mode === 'INSERT') commitSentence();
+    if (inputStart) {
+      settleCursor();
+      history.record(inputStart, snapshot());
+      inputStart = null;
+    }
+    const normalCursor = nearestCursor(computeLayout(tokens, groups, splits, arrows), { x: cursorX, y: cursorY });
+    cursorX = normalCursor.x;
+    cursorY = normalCursor.y;
+    mode = 'NORMAL';
+    arrowSourceId = undefined;
+    arrowKind = undefined;
+    arrowMessage = '';
+    anchor = null;
+    individualSlots = [];
+    translationComposing = false;
+    if (wasTranslation) ontranslationactivity(false);
+    // Blur only the field being closed; a newly focused entry must keep focus.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement) focused.blur();
+  }
+
+  function translationActivity() {
+    if (mode === 'TRANSLATION') ontranslationactivity(translationComposing);
+  }
+
+  function moveVertical(direction: -1 | 1) {
+    if (mode !== 'NORMAL' && mode !== 'VISUAL_MULTI' && mode !== 'ARROW') return;
+    if (direction === -1) {
+      const result = enterBasicGroup(snapshot().document, { x: cursorX, y: cursorY });
+      navigate(result.cursor, result.document);
+    } else {
+      navigate(getVerticalCursor(computeLayout(tokens, groups, splits, arrows), { x: cursorX, y: cursorY }, direction));
+    }
+  }
+
+  function moveToRowEdge(edge: 'start' | 'end') {
+    navigate(getRowEdgeCursor(computeLayout(tokens, groups, splits, arrows), { x: cursorX, y: cursorY }, edge));
+  }
+
+  function settleCursor() {
+    const result = settleBasicGroups(snapshot().document, { x: cursorX, y: cursorY }, anchor);
+    groups = result.document.groups;
+    cursorX = result.cursor.x;
+    cursorY = result.cursor.y;
+    anchor = result.anchor;
+  }
+
+  function navigate(cursor: Cursor, document?: SavedState) {
+    const targetLayout = document ? computeLayout(document.tokens, document.groups, document.splits, document.arrows)
+      : computeLayout(tokens, groups, splits, arrows);
+    const targetId = slotAt(targetLayout, cursor.x, cursor.y);
+    finishMarkerInput();
+    const before = snapshot();
+    const next = document ?? before.document;
+    const nextLayout = computeLayout(next.tokens, next.groups, next.splits, next.arrows);
+    const destination = { ...cursor, y: (targetId ? nextLayout.slotY.get(targetId) : undefined) ?? cursor.y };
+    const result = settleBasicGroups(next, destination, anchor);
+    groups = result.document.groups;
+    cursorX = result.cursor.x;
+    cursorY = result.cursor.y;
+    anchor = result.anchor;
+    history.record(before, snapshot());
+  }
+
+  function toggleCurrentSlot() {
+    individualSlots = toggleSlotSelection(computeLayout(tokens, groups, splits, arrows), individualSlots, { x: cursorX, y: cursorY });
+  }
+
+  function clickSlot(x: number, y: number) {
+    cancelForm();
+    cancelPseudoInput();
+    if (mode === 'BORDER') return;
+    onactivate();
+    navigate({ x, y });
+    if (mode === 'VISUAL_MULTI') toggleCurrentSlot();
+  }
+
+  function currentSlotId(): string | undefined {
+    return slotAt(computeLayout(tokens, groups, splits, arrows), cursorX, cursorY);
+  }
+
+  function applyDocument(next: SavedState, preferredId = currentSlotId()) {
+    const beforeLayout = computeLayout(tokens, groups, splits, arrows);
+    const oldCursor = { x: cursorX, y: cursorY };
+    ({ tokens, slots, groups, splits, arrows, translation } = next);
+    const nextLayout = computeLayout(tokens, groups, splits, arrows);
+    const cursor = relocateCursor(beforeLayout, nextLayout, oldCursor, preferredId);
+    if (anchor) anchor = relocateCursor(beforeLayout, nextLayout, anchor);
+    cursorX = cursor.x;
+    cursorY = cursor.y;
+    settleCursor();
+  }
+
+  export function finishMarkerInput() {
+    if (markerStart) {
+      applyDocument(pruneArrows(snapshot().document));
+      history.record(markerStart, snapshot());
+    }
+    markerStart = null;
+    markerSlotId = undefined;
+    markerBuffer = '';
+  }
+
+  function handleMarkerKey(event: KeyboardEvent): boolean {
+    const slotId = currentSlotId();
+    if (markerSlotId !== undefined && markerSlotId !== slotId) finishMarkerInput();
+    const result = nextMarkerInput(markerBuffer, event);
+    if (result.handled && matchesKeyboardInput(event, [
+      { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
+    ])) {
+      event.preventDefault();
+      return true;
+    }
+    if (result.restarted || !result.handled) finishMarkerInput();
+    if (!result.handled || slotId === undefined) return false;
+    event.preventDefault();
+    if (!isSlotEditable({ tokens, slots }, slotId)) return true;
+    if (!markerStart) {
+      markerStart = snapshot();
+      markerSlotId = slotId;
+    }
+    if (result.marker !== undefined) {
+      slots = setSlotMarker(slots, slotId, result.marker);
+      settleCursor();
+    }
+    markerBuffer = result.buffer;
+    if (!markerBuffer) finishMarkerInput();
+    return true;
+  }
+
+  function cancelForm() {
+    formSession = null;
+    if (mode === 'FORM') mode = 'NORMAL';
+  }
+
+  function startForm() {
+    const before = snapshot();
+    const target = formTargetAtSlot(before.document, currentSlotId());
+    if (!target) return;
+    formSession = { slotId: target.slotId, tokenId: target.tokenId, before, buffer: '' };
+    mode = 'FORM';
+  }
+
+  function commitForm(form?: FormId) {
+    if (!formSession) return;
+    const { before, slotId } = formSession;
+    const current = snapshot().document;
+    const next = setFormAtSlot(current, slotId, form);
+    ({ tokens, groups, splits } = next);
+    enterNormal();
+    if (next !== current) history.record(before, snapshot());
+  }
+
+  function handleFormKeydown(event: KeyboardEvent) {
+    if (!formSession || matchesKeyboardInput(event, [
+      { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
+      { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
+    ])) return;
+    // Movement is dispatched separately; consume other commands before NORMAL.
+    event.preventDefault();
+    const ctrlBracket = matchesKeyboardInput(event, [{ key: '[', ctrlKey: true }]);
+    if (matchesKeyboardInput(event, [
+      { metaKey: true, ctrlKey: null, altKey: null, shiftKey: null, repeat: null, isComposing: null },
+      { altKey: true, ctrlKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
+      { shiftKey: true, ctrlKey: null, altKey: null, metaKey: null, repeat: null, isComposing: null },
+      { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
+    ]) || (matchesKeyboardInput(event, [
+      { ctrlKey: true, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
+    ]) && !ctrlBracket)) return;
+    const operation = resolveKeyboardOperation(event, [
+      { operation: 'editor.cancel', rules: [{ key: 'Escape' }, { key: '[', ctrlKey: true }] },
+      { operation: 'form.clear', rules: [{ key: 'x' }] },
+      { operation: 'form.commit', rules: [{ key: 'Enter' }] },
+    ]);
+    if (operation === 'editor.cancel') finishFormEditing();
+    else if (operation === 'form.clear') commitForm();
+    else if (operation === 'form.commit') {
+      if (!formSession.buffer) enterNormal();
+      else {
+        const form = formIdForInput(formSession.buffer);
+        if (form) commitForm(form);
+      }
+    } else {
+      formSession = { ...formSession, buffer: nextFormInput(formSession.buffer, event).buffer };
+    }
+  }
+
+  export function finishFormEditing() {
+    if (mode !== 'FORM' || !formSession) return;
+    const form = formIdForInput(formSession.buffer);
+    if (form) commitForm(form);
+    else enterNormal();
+  }
+
+  export function handleKeydown(event: KeyboardEvent) {
+    if (event.target instanceof Element && event.target.closest('.debug-panel')) return;
+    if (mode === 'FORM') {
+      const movement = resolveKeyboardOperation(event, [
+        { operation: 'cursor.left', rules: [{ key: ['h', 'ArrowLeft'], shiftKey: null, repeat: null }] },
+        { operation: 'cursor.right', rules: [{ key: ['l', 'ArrowRight'], shiftKey: null, repeat: null }] },
+        { operation: 'cursor.down', rules: [{ key: ['j', 'ArrowDown'], shiftKey: null, repeat: null }] },
+        { operation: 'cursor.up', rules: [{ key: ['k', 'ArrowUp'], shiftKey: null, repeat: null }] },
+        { operation: 'cursor.rowStart', rules: [{ key: '0', shiftKey: null, repeat: null }] },
+        { operation: 'cursor.rowEnd', rules: [{ key: '$', shiftKey: null, repeat: null }] },
+      ]);
+      if (!matchesKeyboardInput(event, [
+        { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
+        { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
+      ]) && movement) finishFormEditing();
+      else { handleFormKeydown(event); return; }
+    }
+    if (mode === 'PSEUDO_INPUT') { handlePseudoKeydown(event); return; }
+    if (matchesKeyboardInput(event, [
+      { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
+      { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
+    ])) return;
+    const globalOperation = resolveKeyboardOperation(event, [
+      { operation: 'editor.cancel', rules: [{ key: '[', ctrlKey: true, repeat: null }] },
+      { operation: 'history.redo', rules: [{ key: 'r', ctrlKey: true, repeat: null }] },
+    ]);
+    // Resolve the Escape alias before '[' can insert a bracket or Ctrl is filtered.
+    if (globalOperation === 'editor.cancel') {
+      event.preventDefault();
+      enterNormal();
+      return;
+    }
+    const redo = globalOperation === 'history.redo';
+    // Ctrl+r must never reload the page, including while a text field is open.
+    if (redo) event.preventDefault();
+    if (mode === 'INSERT' || mode === 'TRANSLATION') return;
+    // Shift/CapsLock must not interrupt a case-sensitive sequence such as nC.
+    if (matchesKeyboardInput(event, [
+      { key: ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'], ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
+    ])) return;
+
+    if (redo) {
+      finishMarkerInput();
+      if (mode === 'ARROW' || mode === 'BORDER') enterNormal();
+      onundo(true);
+      return;
+    }
+    if (matchesKeyboardInput(event, [
+      { ctrlKey: true, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
+      { metaKey: true, ctrlKey: null, altKey: null, shiftKey: null, repeat: null, isComposing: null },
+      { altKey: true, ctrlKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
+    ])) {
+      finishMarkerInput();
+      return;
+    }
+    if (mode === 'NORMAL' && handleMarkerKey(event)) return;
+    const operation = resolveKeyboardOperation(event, [
+      { operation: 'form.start', rules: [{ key: 'f', shiftKey: null, repeat: null }] },
+      { operation: 'history.undo', rules: [{ key: 'u', shiftKey: null, repeat: null }] },
+      { operation: 'bracket.insertSquareOpen', rules: [{ key: '[', repeat: null }] },
+      { operation: 'bracket.insertSquareClose', rules: [{ key: ']', repeat: null }] },
+      { operation: 'bracket.insertRoundOpen', rules: [{ key: '(', shiftKey: null, repeat: null }] },
+      { operation: 'bracket.insertRoundClose', rules: [{ key: ')', shiftKey: null, repeat: null }] },
+      { operation: 'bracket.insertAngleOpen', rules: [{ key: '<', shiftKey: null, repeat: null }] },
+      { operation: 'bracket.insertAngleClose', rules: [{ key: '>', shiftKey: null, repeat: null }] },
+      { operation: 'border.start', rules: [{ key: 'b', shiftKey: null, repeat: null }] },
+      { operation: 'arrow.start', rules: [{ key: 'r', shiftKey: null, repeat: null }] },
+      { operation: 'arrow.delete', rules: [{ key: 'R', shiftKey: null, repeat: null }] },
+      { operation: 'split.t', rules: [{ key: 't', shiftKey: null, repeat: null }] },
+      { operation: 'split.d', rules: [{ key: 'd', shiftKey: null, repeat: null }] },
+      { operation: 'marker.clear', rules: [{ key: 'x', shiftKey: null, repeat: null }] },
+      { operation: 'cursor.left', rules: [{ key: ['h', 'ArrowLeft'], shiftKey: null, repeat: null }] },
+      { operation: 'cursor.right', rules: [{ key: ['l', 'ArrowRight'], shiftKey: null, repeat: null }] },
+      { operation: 'cursor.down', rules: [{ key: ['j', 'ArrowDown'], shiftKey: null, repeat: null }] },
+      { operation: 'cursor.up', rules: [{ key: ['k', 'ArrowUp'], shiftKey: null, repeat: null }] },
+      { operation: 'cursor.rowStart', rules: [{ key: '0', shiftKey: null, repeat: null }] },
+      { operation: 'cursor.rowEnd', rules: [{ key: '$', shiftKey: null, repeat: null }] },
+      { operation: 'selection.toggle', rules: [{ key: 'v', shiftKey: null, repeat: null }] },
+      { operation: mode === 'ARROW' ? 'arrow.commit' : 'selection.commit', rules: [
+        { key: 'Enter', shiftKey: null, repeat: null },
+      ] },
+      { operation: 'editor.cancel', rules: [{ key: 'Escape', shiftKey: null, repeat: null }] },
+      { operation: 'english.start', rules: [{ key: 'i', shiftKey: null, repeat: null }] },
+      { operation: 'translation.start', rules: [{ key: 'Tab', shiftKey: null, repeat: null }] },
+      { operation: 'structure.delete', rules: [{ key: 'X', shiftKey: null, repeat: null }] },
+    ]);
+    if (operation === 'form.start' && mode === 'NORMAL') {
+      event.preventDefault();
+      if (matchesKeyboardInput(event, [{ key: 'f' }])) startForm();
+      return;
+    }
+    if (operation === 'history.undo') {
+      event.preventDefault();
+      if (mode === 'ARROW' || mode === 'BORDER') enterNormal();
+      onundo(false);
+      return;
+    }
+    const navigationLayout = computeLayout(tokens, groups, splits, arrows);
+
+    const bracketText = bracketTextForOperation(operation);
+    if (mode === 'NORMAL' && bracketText !== undefined) {
+      event.preventDefault();
+      if (!matchesKeyboardInput(event, [
+        { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
+      ])) insertRegionBracket(bracketText);
+      return;
+    }
+    if (mode === 'BORDER') {
+      // Do not fall through to slot edits, native button activation or scrolling.
+      event.preventDefault();
+      pseudoMessage = '';
+      const borderOperation = resolveKeyboardOperation(event, [
+        { operation: 'editor.cancel', rules: [{ key: 'Escape', shiftKey: null, repeat: null }] },
+        { operation: 'pseudo.start', rules: [{ key: '/', shiftKey: null }] },
+        { operation: 'bracket.insertSquareOpen', rules: [{ key: '[', shiftKey: null }] },
+        { operation: 'bracket.insertSquareClose', rules: [{ key: ']', shiftKey: null }] },
+        { operation: 'bracket.insertRoundOpen', rules: [{ key: '(', shiftKey: null }] },
+        { operation: 'bracket.insertRoundClose', rules: [{ key: ')', shiftKey: null }] },
+        { operation: 'bracket.insertAngleOpen', rules: [{ key: '<', shiftKey: null }] },
+        { operation: 'bracket.insertAngleClose', rules: [{ key: '>', shiftKey: null }] },
+        { operation: 'bracket.deleteBefore', rules: [{ key: 'Backspace', shiftKey: null }] },
+        { operation: 'bracket.deleteAfter', rules: [{ key: 'Delete', shiftKey: null }] },
+      ]);
+      const borderBracketText = bracketTextForOperation(borderOperation);
+      if (borderOperation === 'editor.cancel') enterNormal();
+      else if (borderOperation === 'pseudo.start') startPseudoInput();
+      else if (borderBracketText !== undefined) insertBorderBracket(borderBracketText);
+      else if (borderOperation === 'bracket.deleteBefore') deleteBorderBracket(borderIndex - 1);
+      else if (borderOperation === 'bracket.deleteAfter') deleteBorderBracket(borderIndex);
+      else borderIndex = moveBorder(borderIndex, tokens.length, event);
+      return;
+    }
+    if (operation === 'border.start' && mode === 'NORMAL') {
+      event.preventDefault();
+      if (matchesKeyboardInput(event, [
+        { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
+      ])) return;
+      borderIndex = borderFromCursor(navigationLayout, { x: cursorX, y: cursorY });
+      arrowMessage = '';
+      mode = 'BORDER';
+      return;
+    }
+
+    if ((operation === 'arrow.start' || operation === 'arrow.delete') && mode === 'NORMAL') {
+      event.preventDefault();
+      if (matchesKeyboardInput(event, [
+        { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
+      ])) return;
+      const id = currentSlotId();
+      if (!id) return;
+      if (operation === 'arrow.delete') {
+        const before = snapshot();
+        applyDocument(deleteArrow(before.document, id), id);
+        history.record(before, snapshot());
+      } else if (isArrowMarker(effectiveSlotMarker({ tokens, slots }, id))
+        || isAppositionMarker(effectiveSlotMarker({ tokens, slots }, id))) {
+        arrowSourceId = id;
+        arrowKind = isAppositionMarker(effectiveSlotMarker({ tokens, slots }, id)) ? 'apposition' : undefined;
+        arrowMessage = '';
+        mode = 'ARROW';
+      } else arrowMessage = `矢印の始点には ${operationKeyLabel('bracket.insertRoundOpen')} / ${operationKeyLabel('bracket.insertAngleOpen')} または ${arrowMarkerLabels}、同格の開始には ${appositionMarkerLabels} の標識が必要です。`;
+      return;
+    }
+    if (operation === 'arrow.commit' && mode === 'ARROW') {
+      event.preventDefault();
+      if (matchesKeyboardInput(event, [
+        { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
+      ])) return;
+      const targetId = currentSlotId();
+      if (!targetId || !arrowSourceId || targetId === arrowSourceId) {
+        arrowMessage = '始点とは別のスロットを選択してください。';
+        return;
+      }
+      if (arrowKind === 'apposition' && !isAppositionEndpoint(effectiveSlotMarker({ tokens, slots }, targetId))) {
+        arrowMessage = `同格の相手は ${appositionMarkerLabels} または空のスロットを選択してください。`;
+        return;
+      }
+      const before = snapshot();
+      applyDocument((arrowKind === 'apposition' ? connectApposition : connectArrow)(before.document, arrowSourceId, targetId), targetId);
+      history.record(before, snapshot());
+      enterNormal();
+      return;
+    }
+    if ((operation === 'split.t' || operation === 'split.d') && mode === 'NORMAL') {
+      event.preventDefault();
+      if (matchesKeyboardInput(event, [
+        { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
+      ])) return;
+      const before = snapshot();
+      const id = currentSlotId();
+      if (id === undefined) return;
+      const next = splitSlot(before.document, id, operation === 'split.t' ? 't' : 'd');
+      if (next === before.document) return;
+      const split = next.splits.find((split) => split.slotId === id)!;
+      applyDocument(next, split.leftSlotId);
+      history.record(before, snapshot());
+    } else if (operation === 'marker.clear' && mode === 'NORMAL') {
+      const slotId = currentSlotId();
+      if (slotId !== undefined && isSlotEditable({ tokens, slots }, slotId)) {
+        const before = snapshot();
+        applyDocument(pruneArrows({ ...before.document, slots: setSlotMarker(slots, slotId) }), slotId);
+        history.record(before, snapshot());
+      }
+      event.preventDefault();
+    } else if (operation === 'cursor.left') {
+      navigate(moveLeft(navigationLayout, { x: cursorX, y: cursorY }));
+      event.preventDefault();
+    } else if (operation === 'cursor.right') {
+      navigate(moveRight(navigationLayout, { x: cursorX, y: cursorY }));
+      event.preventDefault();
+    } else if (operation === 'cursor.down') {
+      moveVertical(1);
+      event.preventDefault();
+    } else if (operation === 'cursor.up') {
+      moveVertical(-1);
+      event.preventDefault();
+    } else if (operation === 'cursor.rowStart') {
+      moveToRowEdge('start');
+      event.preventDefault();
+    } else if (operation === 'cursor.rowEnd') {
+      moveToRowEdge('end');
+      event.preventDefault();
+    } else if (operation === 'selection.toggle' && mode === 'NORMAL') {
+      mode = 'VISUAL';
+      anchor = { x: cursorX, y: cursorY };
+      event.preventDefault();
+    } else if (operation === 'selection.toggle' && mode === 'VISUAL') {
+      individualSlots = [...selectedSlots];
+      anchor = null;
+      mode = 'VISUAL_MULTI';
+      event.preventDefault();
+    } else if (operation === 'selection.toggle' && mode === 'VISUAL_MULTI') {
+      toggleCurrentSlot();
+      event.preventDefault();
+    } else if (operation === 'selection.commit' && selecting) {
+      const contents = groupContentSlotIds(tokens, selectedSlots);
+      if (contents.length) {
+        const before = snapshot();
+        const group = createGroup(tokens, slots, contents, splits);
+        // Creation and focus on the new group's own slot share one history entry.
+        applyDocument({ ...before.document, slots: [...slots, { id: group.slotId }], groups: [...groups, group] }, group.slotId);
+        history.record(before, snapshot());
+      }
+      enterNormal();
+      event.preventDefault();
+    } else if (operation === 'editor.cancel') {
+      enterNormal();
+      event.preventDefault();
+    } else if (operation === 'english.start' && mode === 'NORMAL') {
+      event.preventDefault();
+      if (matchesKeyboardInput(event, [
+        { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
+      ])) return;
+      if (pseudoTokenAtSlot(snapshot().document, currentSlotId())) startPseudoInput();
+      else {
+        inputStart = snapshot();
+        sentenceDraft = sentenceFromTokens();
+        mode = 'INSERT';
+      }
+    } else if (operation === 'translation.start' && mode === 'NORMAL') {
+      inputStart = snapshot();
+      mode = 'TRANSLATION';
+      translationActivity();
+      event.preventDefault();
+    } else if (operation === 'structure.delete' && mode === 'NORMAL') {
+      event.preventDefault();
+      if (matchesKeyboardInput(event, [
+        { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
+      ])) return;
+      const before = snapshot();
+      const id = currentSlotId();
+      const split = splits.find((split) => split.leftSlotId === id || split.rightSlotId === id);
+      if (split) {
+        const next = unsplitSlot(before.document, id!);
+        applyDocument(next, split.slotId);
+      } else {
+        const target = groupForDeletion(layout, { x: cursorX, y: cursorY });
+        if (!target) return;
+        const next = deleteGroup(before.document, target.id);
+        applyDocument(next, id);
+      }
+      settleCursor();
+      history.record(before, snapshot());
+    }
+  }
+  export function finishEditing() {
+    enterNormal();
+  }
+
+  export function selectFirst() {
+    const cursor = nearestCursor(computeLayout(tokens, groups, splits, arrows), { x: 0, y: 0 });
+    cursorX = cursor.x;
+    cursorY = cursor.y;
+  }
+
+  export function startInput(translationInput = false) {
+    onactivate();
+    enterNormal();
+    inputStart = snapshot();
+    sentenceDraft = sentenceFromTokens();
+    mode = translationInput ? 'TRANSLATION' : 'INSERT';
+    translationActivity();
+  }
+
+  export function getInputMode(): EntryInputMode {
+    return mode === 'INSERT' || mode === 'TRANSLATION' || mode === 'PSEUDO_INPUT' || mode === 'FORM' ? mode : null;
+  }
+
+</script>
+
+{#snippet measureForms(slotId: string | undefined)}
+  {@const targets = allFormTargets.filter(target => target.ownerSlotId === slotId)}
+  {#if targets.some(target => visibleFormIds.has(target.slotId) && (formDisplay(target, formSession) || formSession?.slotId === target.slotId))}
+    <div class="form-measure-row" class:form-divided={targets.length === 2}>
+      {#each targets as target}
+        <span class="token-form" class:form-pending={formSession?.slotId === target.slotId}
+          data-form-label={formDisplay(target, formSession)}>{visibleFormIds.has(target.slotId) ? formDisplay(target, formSession) : ''}</span>
+      {/each}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet pseudoField()}
+  {#if pseudoInput}
+    <input type="text" class="pseudo-input" value={pseudoInput.text}
+      style={`left: ${pseudoInputOffset.left}px; top: ${pseudoInputOffset.top}px; width: ${pseudoInputWidth}px`}
+      aria-label={pseudoInput.kind === 'create' ? '疑似トークンを作成' : '疑似トークンを編集（空文字で削除）'}
+      use:focusOnMount
+      on:input={(event) => { if (pseudoInput) pseudoInput.text = event.currentTarget.value; }}
+      on:keydown|stopPropagation={handlePseudoKeydown}
+      on:compositionstart={() => { if (pseudoInput) pseudoInput.composing = true; }}
+      on:compositionend={() => { if (pseudoInput) pseudoInput.composing = false; }}
+      on:blur={cancelPseudoInput} />
+  {/if}
+{/snippet}
+
+{#snippet slotMarker(id: string)}
+  {#if pendingMarkerSlotId === id}
+    <span class="slot-marker marker-pending" role="status" aria-label={`標識入力: ${markerBuffer}`}>{markerBuffer}</span>
+  {:else}
+    <span class="slot-marker">{markerLabel(slotById.get(id)?.marker)}</span>
+  {/if}
+{/snippet}
+
+{#snippet splitControls(split: SlotSplit)}
+  <div class="split-slots" class:d-split={split.kind === 'd'} data-t-source={split.kind === 'd' ? undefined : split.slotId}
+    data-split-source={split.slotId} data-split-kind={split.kind ?? 't'}>
+    {#each [split.leftSlotId, split.rightSlotId] as id, side}
+      <button type="button" class="slot t-half"
+        class:arrow-source={arrowSourceId === id}
+        class:current={currentId === id}
+        class:current-region={currentId === id}
+        class:selected={selecting && selectedSlotIds.has(id)}
+        class:covered={!visibleSlot(displayLayout, id)}
+        disabled={!visibleSlot(displayLayout, id)}
+        data-slot-id={id}
+        aria-label={`${split.kind === 'd' ? 'D分割' : 'T化'} ${side === 0 ? '左' : '右'}スロット${slotById.get(id)?.marker ? ` 標識: ${markerLabel(slotById.get(id)?.marker)}` : ''}`}
+        on:click={() => clickSlotId(id)}>{@render slotMarker(id)}</button>
+    {/each}
+  </div>
+{/snippet}
+
+  {#if mode === 'ARROW'}
+    <p class="selection-guide" role="status">{arrowKind === 'apposition' ? `同格: 相手は ${appositionMarkerLabels} または空。` : '矢印:'} 移動またはクリックで相手を選択 / {operationKeyLabel('arrow.commit')} で確定 / {operationKeyLabel('editor.cancel')} で取消</p>
+  {/if}
+  {#if arrowMessage}<p class="selection-guide" role="status">{arrowMessage}</p>{/if}
+  {#if mode === 'VISUAL_MULTI'}
+    <p class="selection-guide">個別選択: 移動して {operationKeyLabel('selection.toggle')}、またはクリックで追加・解除 / {operationKeyLabel('selection.commit')} で下線作成 / {operationKeyLabel('editor.cancel')} で取消（{selectedSlots.length} 選択中）</p>
+  {/if}
+  {#if mode === 'BORDER'}
+    <p class="selection-guide" role="status">境目モード: {operationKeyLabel('cursor.left')} / {operationKeyLabel('cursor.right')} で移動 / {operationKeyLabel('cursor.rowStart')}・{operationKeyLabel('cursor.rowEnd')} で文頭・文末 ・ {operationKeyLabel('pseudo.start')} で疑似トークン作成 / {operationKeyLabel('editor.cancel')} で Normal（境目 {borderIndex + 1} / {tokens.length + 1}）</p>
+  {/if}
+  {#if mode === 'PSEUDO_INPUT'}
+    <p class="selection-guide" role="status">疑似トークン: {operationKeyLabel('pseudo.commit')} で確定 / {operationKeyLabel('editor.cancel')}・入力欄から離れると取消（再編集は空文字で削除。関連する下線も削除されます）</p>
+  {/if}
+  {#if pseudoMessage}<p class="selection-guide" role="status">{pseudoMessage}</p>{/if}
+  {#if mode === 'FORM'}
+    <p class="selection-guide" role="status">formモード: {formInputGuide} ・ {operationKeyLabel('form.commit')} / {operationKeyLabel('editor.cancel')} で確定 / 移動キー・{operationKeyLabel('entry.next')}/{operationKeyLabel('entry.previous')} で確定して移動 / {operationKeyLabel('form.clear')} で即時削除 / {operationKeyLabel('form.eraseInput')} で入力を戻す（Dは左右別、T・基礎下線は1つ）</p>
+  {/if}
+
+  <section
+    class="editor"
+    class:visual={selecting}
+    aria-label="英文構造図編集領域"
+  >
+    <div class="section-heading"><span class="section-label">ENGLISH</span><button type="button" on:click={() => startInput()}>英文を編集</button></div>
+    {#if mode === 'INSERT'}
+      <p class="selection-guide">英文を変更すると、疑似トークン・角括弧・丸括弧・下線・標識・活用表示・分割・矢印はリセットされます。</p>
+      <div class="input-row">
+        <input bind:value={sentenceDraft} aria-label="英文" use:focusOnMount on:keydown={(event) => {
+          if (!matchesKeyboardInput(event, [
+            { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
+            { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
+          ]) && resolveKeyboardOperation(event, [
+            { operation: 'editor.cancel', rules: [
+              { key: 'Escape', ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
+              { key: '[', ctrlKey: true, repeat: null },
+            ] },
+          ]) === 'editor.cancel') { event.preventDefault(); event.stopPropagation(); enterNormal(); }
+        }} />
+        <button type="button" on:click={enterNormal}>完了</button>
+      </div>
+    {:else}
+      {#if !displayTokens.length}<p class="empty-entry">英文を入力してください</p>{/if}
+      <div class="diagram" style={`--bracket-gutter: ${BRACKET_GUTTER}px; --bracket-min-width: ${BRACKET_GUTTER + BRACKET_SLOT_MIN_WIDTH}px; --close-bracket-width: ${CLOSE_BRACKET_WIDTH}px`} use:measureDiagram={{ measurements, renderLayout, inputTokenId, pseudoInputWidth, formSession }}>
+        {#if !displayTokens.length && active && mode === 'BORDER'}
+          <div class="diagram-row" style="grid-template-columns: 1fr">
+            <span class="border-cursor" style="left: 0" aria-hidden="true"></span>
+          </div>
+        {/if}
+        <div class="token-measurements" aria-hidden="true">
+          {#each measurements.tokens as { token, labels, splitLabels }}
+            <div class="token-measure" class:bracket-open={token.kind === 'bracket-open'} class:bracket-close={token.kind === 'bracket-close'} class:paren-open={token.kind === 'paren-open'} class:paren-close={token.kind === 'paren-close'} class:angle-open={token.kind === 'angle-open'} class:angle-close={token.kind === 'angle-close'} data-token-id={token.id}>
+              {@render measureForms(token.slotId)}
+              {#if token.id === inputTokenId}
+                <span class="pseudo-input-measure">{token.text || ' '}</span>
+              {:else}
+                <span class="token-text" class:pseudo-token={token.kind === 'pseudo'}>{token.text}</span>
+              {/if}
+              {#each labels as label}
+                <span class="slot-marker">{label}</span>
+              {/each}
+              {#each splitLabels as pair}
+                <span class="split-measure">{#each pair as label}<span class="slot-marker">{label || ' '}</span>{/each}</span>
+              {/each}
+            </div>
+          {/each}
+          {#each measurements.groups as { slotId, labels, splitLabels }}
+            <div class="group-measure" data-slot-id={slotId}>
+              {@render measureForms(slotId)}
+              {#each labels as label}<span class="slot-marker">{label}</span>{/each}
+              {#each splitLabels as pair}
+                <span class="split-measure">{#each pair as label}<span class="slot-marker">{label || ' '}</span>{/each}</span>
+              {/each}
+            </div>
+          {/each}
+        </div>
+        <!-- Keep the native input outside row loops: reflow must not restart IME. -->
+        {@render pseudoField()}
+        {#each displayRows as row, rowIndex}
+          <div
+            class="diagram-row"
+            style={`width: ${row.width}px; padding-top: ${row.formHeight}px; grid-template-columns: ${row.columns.map((width) => `${width}px`).join(' ')}`}
+          >
+            {#if row.forms.length}
+              <div class="form-layer">
+                {#each row.forms as form}
+                  <span class="token-form" class:form-pending={form.pending} data-form-slot-id={form.slotId} data-form-label={form.text}
+                    style={`left: ${form.left}px; width: ${form.right - form.left}px; top: ${row.formHeight - (form.lane + 1) * 18}px`}
+                    aria-label={`${form.label} の活用${form.pending ? '（編集中）' : ''}`}>{form.text}</span>
+                {/each}
+              </div>
+            {/if}
+            {#if active && mode === 'BORDER' && borderRenderPosition.row === rowIndex}
+              <span class="border-cursor" style={`left: ${borderRenderPosition.left}px`} aria-hidden="true"></span>
+            {/if}
+            {#each displayTokens.slice(row.start, row.end + 1) as token, localIndex}
+              <div
+                class="token"
+                class:bracket-open={token.kind === 'bracket-open'}
+                class:bracket-close={token.kind === 'bracket-close'}
+                class:paren-open={token.kind === 'paren-open'}
+                class:paren-close={token.kind === 'paren-close'}
+                class:angle-open={token.kind === 'angle-open'}
+                class:angle-close={token.kind === 'angle-close'}
+                style={`--column: ${localIndex * 2 + 2}`}
+              >
+                {#if isVirtualBracket(token)}
+                  <button type="button" class="angle-selection"
+                    class:current={currentId === token.slotId}
+                    class:selected={selecting && selectedSlotIds.has(token.slotId)}
+                    class:arrow-source={arrowSourceId === token.slotId}
+                    class:content-selected={highlightedContentSlotIds.has(token.slotId)}
+                    on:click={() => clickSlotId(token.slotId)}
+                    aria-label={`${token.kind === 'paren-open' ? '開き丸括弧' : '開き山括弧'}（ad系統・標識入力不可）`}>
+                    {#if token.kind === 'angle-open'}
+                      <svg class="angle-glyph" viewBox="0 0 10 100" preserveAspectRatio="none" aria-hidden="true">
+                        <polyline points="9,0 1,50 9,100" />
+                      </svg>
+                    {/if}
+                  </button>
+                  {#if token.kind === 'paren-open'}
+                    <span class="bracket-glyph" aria-hidden="true"></span>
+                  {/if}
+                {:else if token.kind === 'angle-close'}
+                  <svg class="angle-glyph" viewBox="0 0 10 100" preserveAspectRatio="none" aria-hidden="true">
+                    <polyline points="1,0 9,50 1,100" />
+                  </svg>
+                {:else if isBracket(token)}
+                  <span class="bracket-glyph" aria-hidden="true"></span>
+                {:else if token.id === inputTokenId}
+                  <span class="pseudo-input-anchor" style={`width: ${pseudoInputWidth}px`} aria-hidden="true"></span>
+                {:else}
+                  <span class="token-text" class:pseudo-token={token.kind === 'pseudo'}>{token.text}</span>
+                {/if}
+                {#if token.slotId !== undefined && !isVirtualBracket(token)}
+                  {#if splitBySource.has(token.slotId)}
+                    <div class="t-token" class:d-split={splitBySource.get(token.slotId)?.kind === 'd'}>{@render splitControls(splitBySource.get(token.slotId)!)}</div>
+                  {:else if !visibleSlot(displayLayout, token.slotId) || (token.id === inputTokenId && pseudoInput?.kind === 'create')}
+                    <span class="slot slot-placeholder" aria-hidden="true"></span>
+                  {:else}
+                  <button
+                  type="button"
+                  class="slot"
+                  class:arrow-source={arrowSourceId === token.slotId}
+                  class:current={currentId === token.slotId}
+                  class:current-region={currentId === token.slotId}
+                  class:selected={selecting && selectedSlotIds.has(token.slotId)}
+                  on:click={() => clickSlotId(token.slotId)}
+                  aria-label={`${token.kind === 'bracket-open' ? '開き角括弧' : token.text} に対応するスロット${slotById.get(token.slotId)?.marker ? ` 標識: ${markerLabel(slotById.get(token.slotId)?.marker)}` : ''}`}
+                  >{@render slotMarker(token.slotId)}</button>
+                  {/if}
+                {/if}
+              </div>
+            {/each}
+            {#each row.groups as { placement, segments } (placement.group.id)}
+              {@const split = splitBySource.get(placement.group.slotId)}
+              {@const allRegions = renderLayout.regionsBySlot.get(placement.group.slotId)!}
+              <div class="group-line" style={`--row: ${placement.y + 1}`} data-group-kind={placement.group.kind}>
+                {#each segments as segment}
+                  {@const last = segment === allRegions[allRegions.length - 1]}
+                  {#if split && last}
+                    <div class="line-segment t-region" style={`left: ${segment.left}px; width: ${segment.right - segment.left}px`}>
+                      {@render splitControls(split)}
+                      {#if segment.startConnection}<span class="connection-dot start" style={`--connection-color: ${segment.startConnection}`}></span>{/if}
+                    </div>
+                  {:else}
+                    <button type="button" class="line-segment"
+                      class:arrow-source={!split && arrowSourceId === placement.group.slotId}
+                      class:current={!split && currentId === placement.group.slotId}
+                      class:current-region={!split && currentId === placement.group.slotId && currentRegion !== undefined
+                        && segment.logicalRanges.some((range) => range.start < currentRegion.end && range.end > currentRegion.start)}
+                      class:selected={selecting && selectedSlotIds.has(placement.group.slotId)}
+                      style={`left: ${segment.left}px; width: ${segment.right - segment.left}px`}
+                      data-region-start={segment.start} data-region-end={segment.end}
+                      data-slot-id={placement.group.slotId}
+                      title={GROUP_KIND_LABELS[placement.group.kind]}
+                      aria-label={`${GROUP_KIND_LABELS[placement.group.kind]}${split ? ` ${split.kind === 'd' ? 'D分割' : 'T化'}の継続区間` : ''}${!split && slotById.get(placement.group.slotId)?.marker ? ` 標識: ${markerLabel(slotById.get(placement.group.slotId)?.marker)}` : ''}`}
+                      on:click={() => {
+                        if (split) clickSlotId(split.leftSlotId);
+                        else {
+                          const region = segment.logicalRanges.find((range) => range.start <= cursorX && cursorX < range.end)
+                            ?? segment.logicalRanges[0];
+                          const x = Math.max(region.start, Math.min(cursorX, region.end - 1));
+                          if (containsX(layout, placement.group.slotId, x)) clickSlot(x, placement.y);
+                          else clickSlotId(placement.group.slotId);
+                        }
+                      }}>
+                      {#if pendingMarkerSlotId === placement.group.slotId ? segment === pendingMarkerRegion : last}
+                        {@render slotMarker(placement.group.slotId)}
+                      {/if}
+                      {#if segment.startConnection}<span class="connection-dot start" style={`--connection-color: ${segment.startConnection}`}></span>{/if}
+                      {#if segment.endConnection}<span class="connection-dot end" style={`--connection-color: ${segment.endConnection}`}></span>{/if}
+                    </button>
+                  {/if}
+                {/each}
+              </div>
+            {/each}
+            <div class="diagram-depth" style={`grid-row: ${row.maxY + 1}`} aria-hidden="true"></div>
+            {#if row.arrows.length}
+              <svg class="arrow-layer" width="100%" height={row.maxY * 38 + 28} aria-hidden="true">
+                {#each row.arrows as segment}
+                  <g data-arrow-target={segment.targetSlotId} data-arrow-kind={segment.kind ?? 'directed'}>
+                    <line x1={segment.left} x2={segment.right} y1={segment.y} y2={segment.y} />
+                    {#each segment.stems as stem}
+                      {#if stem.attachmentX !== undefined}
+                        <line x1={stem.attachmentX} x2={stem.x} y1={stem.y} y2={stem.y} />
+                      {/if}
+                      <line x1={stem.x} x2={stem.x} y1={stem.y} y2={segment.y} />
+                      {#if stem.target}
+                        <path d={`M ${stem.x - 4} ${stem.y + Math.min(7, segment.y - stem.y)} L ${stem.x} ${stem.y} L ${stem.x + 4} ${stem.y + Math.min(7, segment.y - stem.y)}`} />
+                      {/if}
+                    {/each}
+                    {#if segment.label}<text class="apposition-label" x={segment.label.x} y={segment.label.y}>{segment.label.text}</text>{/if}
+                    {#if segment.startConnection}<circle cx={segment.left} cy={segment.y} r="3.5" style={`fill: ${segment.startConnection}`} />{/if}
+                    {#if segment.endConnection}<circle cx={segment.right} cy={segment.y} r="3.5" style={`fill: ${segment.endConnection}`} />{/if}
+                  </g>
+                {/each}
+              </svg>
+            {/if}
+            {#each row.highlights as region}
+              <div class="content-highlight-row" style={`grid-row: ${region.y + 1}`} aria-hidden="true">
+                <span class="content-highlight" data-content-slot-id={region.slotId}
+                  style={`left: ${region.left + 1}px; width: ${Math.max(0, region.right - region.left - 2)}px`}></span>
+              </div>
+            {/each}
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    <div class="translation-block">
+      <div class="section-heading"><span class="section-label">TRANSLATION</span><button type="button" on:click={() => startInput(true)}>訳文を編集</button></div>
+      {#if mode === 'TRANSLATION'}
+        <textarea bind:value={translation} aria-label="訳文" rows="3" use:focusOnMount
+          on:input={translationActivity} on:keyup={translationActivity}
+          on:pointerdown={translationActivity} on:pointerup={translationActivity}
+          on:click={translationActivity} on:select={translationActivity}
+          on:selectionchange={translationActivity}
+          on:compositionstart={() => { translationComposing = true; translationActivity(); }}
+          on:compositionupdate={translationActivity}
+          on:compositionend={() => { translationComposing = false; translationActivity(); }}
+          on:keydown={(event) => {
+            translationActivity();
+            const translationOperation = resolveKeyboardOperation(event, [
+              { operation: 'translation.blockTab', rules: [
+                { key: 'Tab', ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
+              ] },
+              { operation: 'editor.cancel', rules: [
+                { key: ['Escape', 'Enter'], ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
+                { key: '[', ctrlKey: true, repeat: null },
+              ] },
+            ]);
+            if (translationOperation === 'translation.blockTab') {
+              event.preventDefault();
+              event.stopPropagation();
+              return;
+            }
+            if (matchesKeyboardInput(event, [
+              { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
+              { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
+            ])) return;
+            if (translationOperation === 'editor.cancel') {
+              event.preventDefault();
+              event.stopPropagation();
+              enterNormal();
+            }
+          }}></textarea>
+        <button type="button" on:click={enterNormal}>完了</button>
+      {:else}
+        <p>{translation || 'Tabを押して訳文を入力'}</p>
+      {/if}
+    </div>
+  </section>
+
+  <footer class="entry-stats">
+    <span>{activeGroup && active ? `${GROUP_KIND_LABELS[activeGroup.kind]} / ` : ''}{tokens.length} tokens / {groups.length} structures / {splits.filter(split => split.kind !== 'd').length} T / {splits.filter(split => split.kind === 'd').length} D / {arrows.length} arrows</span>
+  </footer>
