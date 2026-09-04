@@ -98,7 +98,7 @@ test('a horizontal and an unrelated slot on the same logical row share the same 
   assert.equal(r.segments[0].y, r.layout.slotY.get('group') * 38 + 14);
 });
 
-test('source and empty/marked target attachments stay fixed as verticals extend to row centers', () => {
+test('ordinary empty targets attach at the slot top while marked targets stay at the bottom', () => {
   const d = connectArrow(initial(), 'a', 'b');
   for (const marked of [true, false]) {
     const document = { ...d, slots: d.slots.map((s) => s.id === 'b' && !marked ? { id: s.id } : s) };
@@ -107,13 +107,13 @@ test('source and empty/marked target attachments stay fixed as verticals extend 
     assert.equal(segment.y, 52);
     assert.equal(segment.stems.find((s) => !s.target).y, 28);
     const target = segment.stems.find((s) => s.target);
-    assert.equal(target.y, marked ? 28 : -8);
-    assert.equal(segment.y - target.y, marked ? 24 : 60);
+    assert.equal(target.y, marked ? 28 : 0);
+    assert.equal(segment.y - target.y, marked ? 24 : 52);
     assert.equal(Math.min(7, segment.y - target.y), 7); // arrowhead remains at the target edge
   }
 });
 
-test('empty T half targets attach at the bottom, including explicit T, raised owners and wrapping; D stays unchanged', () => {
+test('empty T and D half targets attach at the slot top outside the inset case', () => {
   for (const kind of [undefined, 't', 'd']) {
     for (const owner of ['b', 'inner']) {
       let d = initial();
@@ -138,7 +138,7 @@ test('empty T half targets attach at the bottom, including explicit T, raised ow
             const target = stems(r, targetId)[0];
             const y = owner === 'inner' ? 1 : 0;
             assert.equal(r.layout.slotY.get(targetId), y);
-            assert.equal(target.y, y * 38 + (kind === 'd' && marker === undefined ? -8 : 28));
+            assert.equal(target.y, y * 38 + (marker === undefined ? 0 : 28));
             assert.equal(target.row, r.view.regionsBySlot.get(targetId).at(-1).row);
             assert.equal(target.x, center(r, targetId));
             assert.equal(target.target, true);
@@ -205,17 +205,17 @@ function withBasicTarget(target = 'd') {
 }
 
 test('basic targets use the opposite inset only at right and left edges, keeping interiors centered', () => {
-  for (const [sources, x, extent] of [
-    [['a'], 187, [25, 187]],
-    [['h'], 223, [223, 445]],
-    [['a', 'h'], 205, [25, 445]],
-    [['a', 'b'], 187, [25, 187]],
+  for (const [sources, x, y, extent] of [
+    [['a'], 187, -8, [25, 187]],
+    [['h'], 223, -8, [223, 445]],
+    [['a', 'h'], 205, 0, [25, 445]],
+    [['a', 'b'], 187, -8, [25, 187]],
   ]) {
     const d = withBasicTarget();
     d.arrows = sources.map((sourceSlotId) => ({ sourceSlotId, targetSlotId: 'd' }));
     const r = render(d);
     assert.equal(stems(r, 'd')[0].x, x);
-    assert.equal(stems(r, 'd')[0].y, -8);
+    assert.equal(stems(r, 'd')[0].y, y);
     assert.deepEqual([r.segments[0].left, r.segments[0].right], extent);
     for (const source of sources) assert.equal(stems(r, source)[0].x, center(r, source));
   }
@@ -296,6 +296,7 @@ test('T and D halves use an inset only with an external source and a target at a
       const region = r.view.regionsBySlot.get(rightSlotId).at(-1);
       assert.equal(stems(r, rightSlotId)[0].x, side === 'center' ? center(r, rightSlotId)
         : side === 'left' ? region.left + 7 : region.right - 7);
+      assert.equal(stems(r, rightSlotId)[0].y, side === 'center' ? 0 : -8);
     }
   }
 });
@@ -342,8 +343,13 @@ test('nested underlines and split owners disqualify the whole direct-content lis
     d.groups.push({ id: 'outer-group', slotId: 'outer', kind: 'composite', slots: [member, 'd'] });
     d.slots.push({ id: 'outer' });
     for (const targetSlotId of ['d', member, 'outer']) {
-      const r = render({ ...d, arrows: [{ sourceSlotId: 'h', targetSlotId }] });
+      const document = { ...d,
+        slots: d.slots.map((slot) => slot.id === targetSlotId ? { id: slot.id } : slot),
+        arrows: [{ sourceSlotId: 'h', targetSlotId }],
+      };
+      const r = render(document);
       assert.equal(stems(r, targetSlotId)[0].x, center(r, targetSlotId));
+      assert.equal(stems(r, targetSlotId)[0].y, r.layout.slotY.get(targetSlotId) * 38);
     }
     if (nested) {
       // b still qualifies through its own immediate underline.
@@ -360,8 +366,10 @@ test('bracket slots disqualify underlines even after split atoms renumber token 
     d.groups.push({ id: 'g', slotId: 'group', kind: 'composite', slots: ['b', 'd'] });
     d.slots.push({ id: 'group' });
     d.arrows = [{ sourceSlotId: 'h', targetSlotId: 'd' }];
+    d.slots = d.slots.map((slot) => slot.id === 'd' ? { id: 'd' } : slot);
     const r = render(d);
     assert.equal(stems(r, 'd')[0].x, center(r, 'd'));
+    assert.equal(stems(r, 'd')[0].y, 0);
     assert.equal(r.segments[0].left, center(r, 'd'));
   }
 });
@@ -402,7 +410,7 @@ test('being the first or last stem on a wrapped row does not make an interior ta
     const target = stems(r, targetSlotId)[0];
     const segment = r.segments.find((s) => s.row === target.row);
     assert.equal(target.x, center(r, targetSlotId));
-    assert.equal(target.y, -8);
+    assert.equal(target.y, 0);
     assert.deepEqual([segment.left, segment.right], extent);
     assert.equal(r.segments[0].endConnection, r.segments[1].startConnection);
   }
@@ -437,6 +445,7 @@ test('basic targets use their split region edges and center regions narrower tha
         const expected = tokenWidth <= 28 ? center(r, side)
           : source === 'a' ? region.left + 7 : region.right - 7;
         assert.equal(target.x, expected);
+        assert.equal(target.y, -8);
         assert.ok(target.x > region.left && target.x < region.right);
       }
     }

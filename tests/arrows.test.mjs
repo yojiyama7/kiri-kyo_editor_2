@@ -258,7 +258,7 @@ test('rendering handles shared targets, both directions and empty versus marked 
   assert.equal(segment.stems.length, 3); assert.equal(segment.stems.filter((s) => s.target).length, 1);
   assert.equal(segment.stems.find((s) => s.target).y, 28);
   const [empty] = renderArrows(l, view.regionsBySlot, setSlotMarker(d.slots, 'd'));
-  assert.equal(empty.stems.find((s) => s.target).y, -8);
+  assert.equal(empty.stems.find((s) => s.target).y, 0);
   assert.deepEqual(empty.stems.filter((s) => !s.target).map((s) => s.y), [28, 28]);
 });
 

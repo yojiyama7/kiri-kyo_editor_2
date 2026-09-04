@@ -64,11 +64,13 @@ export function renderArrows(layout: DiagramLayout, regionsBySlot: ReadonlyMap<s
         const offset = Math.min(OUTGOING_OFFSET, Math.max(0, region.right - region.left) / 4, distance);
         x += direction * offset;
       }
-      const extendAboveSlot = (apposition || target) && slotById.get(slotId)?.marker === undefined
-        && !tHalfSlots.has(slotId);
+      const emptySlot = slotById.get(slotId)?.marker === undefined;
+      const extendAboveSlot = apposition && emptySlot && !tHalfSlots.has(slotId);
+      const attachToSlotTop = target && emptySlot;
       return { slotId, row: region.row, x, target,
         ...(attachment && x !== attachment.x ? { attachmentX: attachment.x } : {}),
-        y: attachment?.y ?? layout.slotY.get(slotId)! * 38 + (extendAboveSlot ? -EMPTY_SLOT_EXTENSION : 28) };
+        y: attachment?.y ?? layout.slotY.get(slotId)! * 38
+          + (extendAboveSlot ? -EMPTY_SLOT_EXTENSION : attachToSlotTop ? 0 : 28) };
     }).sort((a, b) => a.row - b.row || a.x - b.x);
     // A shared target moves only when at least one source enters from outside
     // a qualifying underline. Membership stays the same across wrapped rows.
@@ -84,6 +86,7 @@ export function renderArrows(layout: DiagramLayout, regionsBySlot: ReadonlyMap<s
       if (determinesLeft || determinesRight) {
         const inset = Math.min(BASIC_TARGET_INSET, (targetRegion.right - targetRegion.left) / 2);
         target.x = determinesRight ? targetRegion.left + inset : targetRegion.right - inset;
+        if (slotById.get(target.slotId)?.marker === undefined) target.y -= EMPTY_SLOT_EXTENSION;
         endpoints.sort((a, b) => a.row - b.row || a.x - b.x);
       }
     }
