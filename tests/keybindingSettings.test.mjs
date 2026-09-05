@@ -9,10 +9,12 @@ import { lockDocumentScroll } from '../src/documentScroll.ts';
 let Settings;
 before(async () => {
   let source = readFileSync(new URL('../src/KeybindingSettings.svelte', import.meta.url), 'utf8');
-  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'save', 'close', 'record']) source = source.replace(`  function ${name}(`, `  export function ${name}(`);
+  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'assignmentSummary', 'save', 'close', 'record']) source = source.replace(`  function ${name}(`, `  export function ${name}(`);
   source = source.replace('</script>', `
     export function draftForTest() { return { draft, saveError }; }
     export function setDialogForTest(value: HTMLDialogElement) { dialog = value; }
+    export function helpForTest() { return selectedHelp; }
+    export function setHelpDialogForTest(value: HTMLDialogElement) { helpDialog = value; }
   </script>`);
   const { js } = compile(source, { generate: 'server' });
   const code = js.code.replace(/from '([^']+)'/g, (_, specifier) => `from '${specifier.startsWith('./') ? new URL('../src/' + specifier.slice(2) + '.ts', import.meta.url).href : import.meta.resolve(specifier)}'`);
@@ -22,9 +24,10 @@ afterEach(() => { applySettings(defaultSettings()); delete globalThis.localStora
 function setup() {
   const api = {}, events = [];
   const props = { onclose: () => events.push('cancel'), onsaved: () => events.push('save') };
-  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'save', 'close', 'record', 'draftForTest', 'setDialogForTest']) Object.defineProperty(props, name, { set(value) { api[name] = value; } });
+  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'assignmentSummary', 'save', 'close', 'record', 'draftForTest', 'setDialogForTest', 'helpForTest', 'setHelpDialogForTest']) Object.defineProperty(props, name, { set(value) { api[name] = value; } });
   const html = render(Settings, { props }).body;
   api.setDialogForTest({ close() { events.push('close'); }, querySelector() {} });
+  api.setHelpDialogForTest({ showModal() { events.push('help-open'); }, close() { events.push('help-close'); } });
   return { api, events, html };
 }
 
@@ -36,7 +39,12 @@ test('settings renders three editable slots without fixed Esc or add/remove butt
   assert.ok(html.includes('キーバインド1'));
   assert.ok(html.includes('キーバインド2'));
   assert.ok(html.includes('キーバインド3'));
-  assert.match(source, /\.binding-header, \.binding-row \{[^}]*grid-template-columns: minmax\(210px, 1fr\) repeat\(3, 118px\) max-content/s);
+  assert.match(source, /\.binding-header, \.binding-row \{[^}]*grid-template-columns: minmax\(185px, 1fr\) 28px repeat\(3, 118px\) max-content/s);
+  assert.equal(html.match(/role="tooltip"/g)?.length, OPERATIONS.length);
+  assert.equal(html.match(/aria-haspopup="dialog"/g)?.length, OPERATIONS.length);
+  assert.ok(source.includes('<h3>何をする操作か</h3>'));
+  assert.ok(source.includes('<h3>利用可能なモード</h3>'));
+  assert.ok(source.includes('<h3>使い方の例</h3>'));
   assert.ok(html.includes('競合警告'));
   assert.ok(html.includes('NORMAL'));
   assert.ok(html.includes('MARKER_SEQUENCE'));
@@ -65,6 +73,17 @@ test('slot edits stay dense, per-operation reset restores defaults and cancellat
   api.close();
   assert.deepEqual(events, ['close', 'cancel']);
   assert.deepEqual(getSettings(), defaultSettings());
+});
+
+test('operation help opens and closes independently with the current assignments', () => {
+  const { api, events } = setup();
+  const operation = OPERATIONS.find(operation => operation.id === 'editor.cancel');
+  api.openHelp(operation);
+  assert.equal(api.helpForTest().id, 'editor.cancel');
+  assert.match(api.assignmentSummary(operation), /^Esc（固定） \/ Ctrl\+\[$/);
+  api.closeHelp();
+  assert.equal(api.helpForTest(), null);
+  assert.deepEqual(events, ['help-open', 'help-close']);
 });
 
 test('recording captures modified keys and Escape clears and left-packs the selected binding', () => {

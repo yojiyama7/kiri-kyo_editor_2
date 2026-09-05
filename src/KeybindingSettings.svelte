@@ -1,11 +1,14 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { OPERATIONS, getSettings, defaultSettings, captureKey, bindingLabel, validateSettings, findConflicts,
-    operationDefinition, saveSettings, isComposingInput, type Binding, type OperationId } from './keybindings';
+    operationDefinition, saveSettings, isComposingInput, type Binding, type OperationDefinition, type OperationId } from './keybindings';
+  import { MODE_HELP, operationHelp } from './keybindingHelp';
   import { lockDocumentScroll } from './documentScroll';
   export let onclose: () => void;
   export let onsaved: () => void;
   let dialog: HTMLDialogElement;
+  let helpDialog: HTMLDialogElement;
+  let selectedHelp: OperationDefinition | null = null;
   let draft = structuredClone(getSettings());
   let saveError = '';
   let recording: string | null = null;
@@ -63,6 +66,19 @@
   function reset(id: OperationId) {
     draft = { ...draft, bindings: { ...draft.bindings, [id]: defaultSettings().bindings[id] } };
   }
+  function openHelp(operation: OperationDefinition) {
+    selectedHelp = operation;
+    helpDialog.showModal();
+  }
+  function closeHelp() {
+    helpDialog.close();
+    selectedHelp = null;
+  }
+  function assignmentSummary(operation: OperationDefinition): string {
+    const labels = editableBindings(operation.id).map(bindingLabel);
+    if (operation.category === 1) labels.unshift('Esc（固定）');
+    return labels.join(' / ') || '未割り当て';
+  }
   function record(event: KeyboardEvent, id: OperationId, index: number) {
     if (event.key === 'Escape' && !isComposingInput(event)) { clearSlot(event, id, index); return; }
     event.stopPropagation();
@@ -94,14 +110,21 @@
     <section class="binding-list" role="table" aria-label="固定優先順位順の操作">
       <div class="binding-header" role="row">
         <span role="columnheader">操作</span>
+        <span role="columnheader">説明</span>
         <span role="columnheader">キーバインド1</span>
         <span role="columnheader">キーバインド2</span>
         <span role="columnheader">キーバインド3</span>
         <span role="columnheader">初期化</span>
       </div>
       {#each OPERATIONS as operation, rank}
+        {@const help = operationHelp(operation.id)}
         <div class="binding-row" role="row">
           <div class="binding-operation" role="rowheader"><strong>{rank + 1}. {operation.label}</strong><small>{categories[operation.category - 1]} · 適用モード: {operation.modes.join(' / ')}</small></div>
+          <div class="help-control" role="cell">
+            <button type="button" class="help-button" aria-label={`${operation.label}の詳細説明`} aria-describedby={`help-summary-${operation.id}`}
+              aria-haspopup="dialog" on:click={() => openHelp(operation)}>?</button>
+            <span class="help-tooltip" id={`help-summary-${operation.id}`} role="tooltip">{help.summary}</span>
+          </div>
           {#each slotIndexes as index}
             {@const binding = editableBindings(operation.id)[index]}
             <div class="binding-slot" role="cell">
@@ -150,6 +173,35 @@
   </footer>
 </dialog>
 
+<dialog bind:this={helpDialog} class="operation-help" aria-labelledby="operation-help-title"
+  on:cancel|preventDefault={closeHelp} on:keydown|stopPropagation>
+  {#if selectedHelp}
+    {@const help = operationHelp(selectedHelp.id)}
+    <div class="operation-help-heading">
+      <h2 id="operation-help-title">{selectedHelp.label}</h2>
+      <button type="button" aria-label="詳細説明を閉じる" on:click={closeHelp}>閉じる</button>
+    </div>
+    <section>
+      <h3>何をする操作か</h3>
+      <p>{help.description}</p>
+    </section>
+    <section>
+      <h3>利用可能なモード</h3>
+      <ul class="mode-list">
+        {#each selectedHelp.modes as mode}<li><strong>{mode}</strong><span>{MODE_HELP[mode]}</span></li>{/each}
+      </ul>
+    </section>
+    <section>
+      <h3>使い方の例</h3>
+      <p>{help.example}</p>
+    </section>
+    <section>
+      <h3>現在の割り当て</h3>
+      <p>{assignmentSummary(selectedHelp)}</p>
+    </section>
+  {/if}
+</dialog>
+
 <style>
   .keybinding-settings { width: min(1100px, 94vw); max-height: 90vh; padding: 0; border: 1px solid #aaa; border-radius: 10px; color: #222; background: white; overscroll-behavior: contain; }
   .keybinding-settings::backdrop { background: #0006; }
@@ -158,11 +210,15 @@
   h2 { margin: 0 0 8px; }
   .settings-content { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); height: 58vh; overflow: hidden; }
   .binding-list { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-  .binding-header, .binding-row { display: grid; grid-template-columns: minmax(210px, 1fr) repeat(3, 118px) max-content; gap: 8px; align-items: center; min-width: 680px; padding: 10px 16px; }
+  .binding-header, .binding-row { display: grid; grid-template-columns: minmax(185px, 1fr) 28px repeat(3, 118px) max-content; gap: 8px; align-items: center; min-width: 680px; padding: 10px 16px; }
   .binding-header { position: sticky; top: 0; z-index: 1; border-bottom: 1px solid #bbb; background: #eee; color: #555; font-size: .75rem; font-weight: 600; }
   .binding-row { border-bottom: 1px solid #ddd; }
   .binding-operation { min-width: 0; }
   small { display: block; color: #666; font-size: .75rem; margin-top: 4px; }
+  .help-control { position: relative; display: flex; justify-content: center; }
+  .help-button { width: 22px; height: 22px; padding: 0; border: 1px solid #777; border-radius: 50%; background: white; color: #555; font-weight: 700; line-height: 20px; }
+  .help-tooltip { position: absolute; top: calc(100% + 7px); left: 50%; z-index: 4; width: 220px; padding: 8px 10px; border: 1px solid #777; border-radius: 5px; background: #222; color: white; font-size: .75rem; font-weight: 400; line-height: 1.45; box-shadow: 0 3px 10px #0004; opacity: 0; visibility: hidden; pointer-events: none; transform: translateX(-50%); transition: opacity .12s; }
+  .help-control:hover .help-tooltip, .help-button:focus-visible + .help-tooltip { opacity: 1; visibility: visible; }
   .binding-slot { min-width: 0; }
   .binding-reset { justify-self: end; }
   input { box-sizing: border-box; width: 100%; padding: 6px; border: 1px solid #aaa; border-radius: 4px; }
@@ -176,5 +232,15 @@
   .conflict p { margin: 6px 0; }
   .error { color: #a02020; font-size: .85rem; }
   footer { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+  .operation-help { box-sizing: border-box; width: min(560px, 90vw); max-height: 82vh; padding: 20px 24px; border: 1px solid #888; border-radius: 10px; color: #222; background: white; }
+  .operation-help::backdrop { background: #0007; }
+  .operation-help-heading { display: flex; gap: 16px; align-items: center; justify-content: space-between; border-bottom: 1px solid #ddd; padding-bottom: 12px; }
+  .operation-help-heading h2 { margin: 0; font-size: 1.25rem; }
+  .operation-help section { margin-top: 18px; }
+  .operation-help h3 { margin: 0 0 6px; font-size: .95rem; }
+  .operation-help p { margin: 0; line-height: 1.65; }
+  .mode-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 0; list-style: none; }
+  .mode-list li { display: flex; gap: 5px; align-items: baseline; padding: 5px 8px; border-radius: 5px; background: #f0f3f6; font-size: .8rem; }
+  .mode-list span { color: #555; }
   @media (max-width: 700px) { .settings-content { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(120px, 1fr); } aside { border-left: 0; } }
 </style>
