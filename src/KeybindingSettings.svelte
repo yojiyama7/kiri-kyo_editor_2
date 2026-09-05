@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { OPERATIONS, getSettings, defaultSettings, captureKey, bindingLabel, validateSettings, findConflicts,
     operationDefinition, saveSettings, isComposingInput, type Binding, type OperationId } from './keybindings';
   import { lockDocumentScroll } from './documentScroll';
@@ -9,6 +9,7 @@
   let draft = structuredClone(getSettings());
   let saveError = '';
   let recording: string | null = null;
+  const slotIndexes = [0, 1, 2];
   const categories = ['取消', '移動', 'Undo / Redo', 'モード内操作', '標識・form入力', '操作開始・構造変更'];
   $: errors = validateSettings(draft);
   $: conflicts = findConflicts(draft);
@@ -16,30 +17,62 @@
     dialog.showModal();
     return lockDocumentScroll(document);
   });
-  function replace(id: OperationId, index: number, binding: Binding) {
-    draft = { ...draft, bindings: { ...draft.bindings, [id]: draft.bindings[id].map((old, i) => i === index ? binding : old) } };
+  function isFixedEscape(binding: Binding): boolean {
+    return binding.kind === 'key' && binding.key === 'Escape' && !binding.ctrl && !binding.alt && !binding.meta && !binding.shift && !binding.code;
+  }
+  function editableBindings(id: OperationId): Binding[] {
+    return draft.bindings[id].filter(binding => !isFixedEscape(binding));
+  }
+  function setSlot(id: OperationId, index: number, binding?: Binding): number | undefined {
+    const current = editableBindings(id);
+    let actualIndex: number | undefined;
+    if (binding) {
+      actualIndex = Math.min(index, current.length);
+      if (index < current.length) current[index] = binding;
+      else current.push(binding);
+    } else if (index < current.length) {
+      current.splice(index, 1);
+    }
+    const fixed = draft.bindings[id].filter(isFixedEscape);
+    draft = { ...draft, bindings: { ...draft.bindings, [id]: [...fixed, ...current] } };
     saveError = '';
+    return actualIndex;
   }
-  function remove(id: OperationId, index: number) {
-    draft = { ...draft, bindings: { ...draft.bindings, [id]: draft.bindings[id].filter((_, i) => i !== index) } };
+  async function focusSlot(id: OperationId, index: number) {
+    await tick();
+    const input = dialog?.querySelector<HTMLInputElement>(`input[data-operation="${id}"][data-slot="${index}"]`);
+    input?.focus();
+    if (!input?.readOnly) input?.setSelectionRange(input.value.length, input.value.length);
   }
-  function add(id: OperationId, sequence: boolean) {
-    const blank: Binding = sequence ? { kind: 'sequence', sequence: '' } : { kind: 'key', key: '', ctrl: false, alt: false, meta: false, shift: false };
-    draft = { ...draft, bindings: { ...draft.bindings, [id]: [...draft.bindings[id], blank] } };
+  function clearSlot(event: KeyboardEvent, id: OperationId, index: number): boolean {
+    if (isComposingInput(event) || event.key !== 'Escape') return false;
+    event.preventDefault();
+    event.stopPropagation();
+    setSlot(id, index);
+    recording = null;
+    (event.currentTarget as HTMLElement).blur();
+    return true;
+  }
+  function updateSequence(event: Event, id: OperationId, index: number) {
+    const input = event.currentTarget as HTMLInputElement;
+    const value = input.value;
+    const actualIndex = setSlot(id, index, value ? { kind: 'sequence', sequence: value } : undefined);
+    if (!value) input.blur();
+    else if (actualIndex !== index) void focusSlot(id, actualIndex!);
   }
   function reset(id: OperationId) {
     draft = { ...draft, bindings: { ...draft.bindings, [id]: defaultSettings().bindings[id] } };
   }
   function record(event: KeyboardEvent, id: OperationId, index: number) {
+    if (event.key === 'Escape' && !isComposingInput(event)) { clearSlot(event, id, index); return; }
     event.stopPropagation();
     if (isComposingInput(event)) return;
-    event.preventDefault();
     const key = captureKey(event);
     if (!key || event.repeat) return;
-    // Escape always cancels recording; it cannot be assigned to another operation.
-    if (key.key === 'Escape') { recording = null; (event.target as HTMLElement).blur(); return; }
-    replace(id, index, key);
+    event.preventDefault();
+    const actualIndex = setSlot(id, index, key);
     recording = null;
+    if (actualIndex !== index) void focusSlot(id, actualIndex!);
   }
   function save() {
     try { saveSettings(localStorage, draft); dialog.close(); onsaved(); }
@@ -52,7 +85,8 @@
   on:cancel={(event) => { event.preventDefault(); close(); }} on:keydown|stopPropagation>
   <header>
     <h2 id="keybinding-title">キーバインド設定</h2>
-    <p>上ほど優先されます。各操作3件まで。Escは固定です。競合があっても保存できます。</p>
+    <p>上ほど優先されます。各操作3件まで。Escは設定欄には表示されませんが、取消キーとして常に有効です。競合があっても保存できます。</p>
+    <p>入力欄でEscを押すと、その割り当てを解除します。空いた欄は自動的に左詰めされます。</p>
     <p>キー欄を選んで実際のキーを押してください。標識・formは文字列を入力します。定型標識は先頭文字から専用モードに入り、続きの入力に時間制限はありません。</p>
     <p>OS・ブラウザーが先に処理するキーは、アプリへ届かない場合があります。この競合の完全検出はできません。</p>
   </header>
@@ -62,25 +96,25 @@
         <div class="binding-row">
           <div><strong>{rank + 1}. {operation.label}</strong><small>{categories[operation.category - 1]} · 適用モード: {operation.modes.join(' / ')}</small></div>
           <div class="binding-slots">
-            {#each draft.bindings[operation.id] as binding, index}
-              {@const fixed = binding.kind === 'key' && binding.key === 'Escape'}
+            {#each slotIndexes as index}
+              {@const binding = editableBindings(operation.id)[index]}
               <div class="binding-slot">
-                {#if binding.kind === 'sequence'}
-                  <input aria-label={`${operation.label} 割り当て${index + 1}`} value={binding.sequence}
-                    on:input={(event) => replace(operation.id, index, { kind: 'sequence', sequence: event.currentTarget.value })} />
+                {#if operation.sequence}
+                  <input aria-label={`${operation.label} 割り当て${index + 1}`} value={binding?.kind === 'sequence' ? binding.sequence : ''}
+                    data-operation={operation.id} data-slot={index}
+                    on:input={(event) => updateSequence(event, operation.id, index)}
+                    on:keydown={(event) => clearSlot(event, operation.id, index)} />
                 {:else}
-                  <input readonly disabled={fixed} aria-label={`${operation.label} 割り当て${index + 1}${fixed ? ' 固定' : ''}`}
-                    value={bindingLabel(binding)} placeholder="キーを押して登録"
+                  <input readonly aria-label={`${operation.label} 割り当て${index + 1}`}
+                    value={binding ? bindingLabel(binding) : ''} placeholder="キーを押して登録"
+                    data-operation={operation.id} data-slot={index}
                     class:recording={recording === `${operation.id}:${index}`}
                     on:focus={() => { recording = `${operation.id}:${index}`; }} on:blur={() => { recording = null; }}
                     on:keydown={(event) => record(event, operation.id, index)} />
                 {/if}
-                {#if fixed}<span>固定</span>{:else}<button type="button" aria-label={`${operation.label} 割り当て${index + 1}を削除`} on:click={() => remove(operation.id, index)}>削除</button>{/if}
               </div>
             {/each}
-            {#if draft.bindings[operation.id].length < 3}<button type="button" on:click={() => add(operation.id, operation.sequence)}>追加</button>{/if}
             <button type="button" on:click={() => reset(operation.id)}>初期化</button>
-            {#if draft.bindings[operation.id].length === 0}<small>未割り当て</small>{/if}
           </div>
         </div>
       {/each}

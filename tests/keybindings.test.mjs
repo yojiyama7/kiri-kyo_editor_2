@@ -135,6 +135,8 @@ test('settings validate count, unassigned operations, fixed Esc, duplicates, mal
   fresh.bindings['editor.cancel'].push(chord('q'));
   assert.deepEqual(validateSettings(fresh), []);
   fresh.bindings['editor.cancel'].push(chord('w'));
+  assert.deepEqual(validateSettings(fresh), []);
+  fresh.bindings['editor.cancel'].push(chord('e'));
   assert.ok(validateSettings(fresh).length);
 });
 

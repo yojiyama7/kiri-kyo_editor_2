@@ -126,7 +126,8 @@ export function validateSettings(value: unknown): string[] {
   for (const op of OPERATIONS) {
     const values = settings.bindings[op.id];
     if (!Array.isArray(values)) { errors.push(`${op.label}: 割り当てが不正です`); continue; }
-    if (values.length > 3) errors.push(`${op.label}: 登録できるのは3件までです`);
+    const maximum = op.category === 1 ? 4 : 3;
+    if (values.length > maximum) errors.push(`${op.label}: 登録できるのは${op.category === 1 ? '固定Escと3件' : '3件'}までです`);
     const seen = new Set<string>();
     for (const binding of values) {
       if (!binding || typeof binding !== 'object') { errors.push(`${op.label}: 入力が不正です`); continue; }

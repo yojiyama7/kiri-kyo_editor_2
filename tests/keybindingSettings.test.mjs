@@ -9,7 +9,7 @@ import { lockDocumentScroll } from '../src/documentScroll.ts';
 let Settings;
 before(async () => {
   let source = readFileSync(new URL('../src/KeybindingSettings.svelte', import.meta.url), 'utf8');
-  for (const name of ['replace', 'remove', 'add', 'reset', 'save', 'close', 'record']) source = source.replace(`  function ${name}(`, `  export function ${name}(`);
+  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'save', 'close', 'record']) source = source.replace(`  function ${name}(`, `  export function ${name}(`);
   source = source.replace('</script>', `
     export function draftForTest() { return { draft, saveError }; }
     export function setDialogForTest(value: HTMLDialogElement) { dialog = value; }
@@ -22,49 +22,82 @@ afterEach(() => { applySettings(defaultSettings()); delete globalThis.localStora
 function setup() {
   const api = {}, events = [];
   const props = { onclose: () => events.push('cancel'), onsaved: () => events.push('save') };
-  for (const name of ['replace', 'remove', 'add', 'reset', 'save', 'close', 'record', 'draftForTest', 'setDialogForTest']) Object.defineProperty(props, name, { set(value) { api[name] = value; } });
+  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'save', 'close', 'record', 'draftForTest', 'setDialogForTest']) Object.defineProperty(props, name, { set(value) { api[name] = value; } });
   const html = render(Settings, { props }).body;
-  api.setDialogForTest({ close() { events.push('close'); } });
+  api.setDialogForTest({ close() { events.push('close'); }, querySelector() {} });
   return { api, events, html };
 }
 
-test('settings renders fixed Esc, ranked modes and warnings without launching a browser', () => {
+test('settings renders three editable slots without fixed Esc or add/remove buttons', () => {
   const { html } = setup();
   assert.ok(html.includes('固定優先順位順の操作'));
   assert.ok(html.includes('競合警告'));
   assert.ok(html.includes('NORMAL'));
   assert.ok(html.includes('MARKER_SEQUENCE'));
-  assert.ok(html.includes('固定'));
+  assert.ok(html.includes('Escは設定欄には表示されません'));
   assert.ok(html.includes('保存'));
-  assert.ok(!html.includes('編集の終了・取消 割り当て1を削除'));
+  assert.ok(html.includes('編集の終了・取消 割り当て1'));
+  assert.ok(html.includes('編集の終了・取消 割り当て2'));
+  assert.ok(html.includes('編集の終了・取消 割り当て3'));
+  assert.ok(html.includes('value="Ctrl+['));
+  assert.ok(!html.includes(' 固定'));
+  assert.ok(!html.includes('>追加<'));
+  assert.ok(!html.includes('>削除<'));
 });
 
-test('edits are a draft, per-operation reset restores defaults and cancellation discards them', () => {
+test('slot edits stay dense, per-operation reset restores defaults and cancellation discards them', () => {
   const { api, events } = setup();
-  api.replace('cursor.left', 0, captureKey({ key: 'q' }));
+  api.setSlot('cursor.left', 0, captureKey({ key: 'q' }));
   assert.notDeepEqual(api.draftForTest().draft, getSettings());
   api.reset('cursor.left');
   assert.deepEqual(api.draftForTest().draft, getSettings());
-  api.remove('cursor.left', 0); api.remove('cursor.left', 0);
+  api.setSlot('cursor.left', 0); api.setSlot('cursor.left', 0);
   assert.deepEqual(api.draftForTest().draft.bindings['cursor.left'], []);
+  assert.equal(api.setSlot('cursor.left', 2, captureKey({ key: 'q' })), 0);
+  assert.deepEqual(api.draftForTest().draft.bindings['cursor.left'], [captureKey({ key: 'q' })]);
   api.close();
   assert.deepEqual(events, ['close', 'cancel']);
   assert.deepEqual(getSettings(), defaultSettings());
 });
 
-test('recording captures modified keys, stops propagation, and Escape ends recording without changing binding', () => {
+test('recording captures modified keys and Escape clears and left-packs the selected binding', () => {
   const { api } = setup(); let prevented = 0, stopped = 0, blurred = 0;
-  const event = { key: 'q', metaKey: true, preventDefault() { prevented++; }, stopPropagation() { stopped++; }, target: { blur() { blurred++; } } };
+  const event = { key: 'q', metaKey: true, preventDefault() { prevented++; }, stopPropagation() { stopped++; }, currentTarget: { blur() { blurred++; } } };
   api.record(event, 'cursor.left', 0);
   assert.deepEqual(api.draftForTest().draft.bindings['cursor.left'][0], captureKey(event));
-  api.record({ ...event, key: 'Escape', metaKey: false }, 'cursor.left', 0);
-  assert.deepEqual(api.draftForTest().draft.bindings['cursor.left'][0], captureKey(event));
+  api.setSlot('cursor.left', 2, captureKey({ key: 'w' }));
+  api.record({ ...event, key: 'Escape', metaKey: false }, 'cursor.left', 1);
+  assert.deepEqual(api.draftForTest().draft.bindings['cursor.left'].map(binding => binding.key), ['q', 'w']);
   assert.equal(prevented, 2); assert.equal(stopped, 2); assert.equal(blurred, 1);
+});
+
+test('sequence fields append from later slots, clear on Escape, and ignore composing Escape', () => {
+  const { api } = setup(); let blurred = 0, prevented = 0, stopped = 0;
+  api.setSlot('marker.subject', 0);
+  api.updateSequence({ currentTarget: { value: 'zz', blur() { blurred++; } } }, 'marker.subject', 2);
+  assert.deepEqual(api.draftForTest().draft.bindings['marker.subject'], [{ kind: 'sequence', sequence: 'zz' }]);
+  const escape = { key: 'Escape', preventDefault() { prevented++; }, stopPropagation() { stopped++; }, currentTarget: { blur() { blurred++; } } };
+  assert.equal(api.clearSlot(escape, 'marker.subject', 0), true);
+  assert.deepEqual(api.draftForTest().draft.bindings['marker.subject'], []);
+  api.setSlot('marker.subject', 0, { kind: 'sequence', sequence: 's' });
+  assert.equal(api.clearSlot({ ...escape, isComposing: true }, 'marker.subject', 0), false);
+  assert.equal(api.draftForTest().draft.bindings['marker.subject'][0].sequence, 's');
+  assert.equal(blurred, 1); assert.equal(prevented, 1); assert.equal(stopped, 1);
+});
+
+test('cancel operations retain hidden fixed Escape and accept three editable bindings', () => {
+  const { api } = setup();
+  api.setSlot('editor.cancel', 1, captureKey({ key: 'q' }));
+  api.setSlot('editor.cancel', 2, captureKey({ key: 'w' }));
+  const bindings = api.draftForTest().draft.bindings['editor.cancel'];
+  assert.equal(bindings.length, 4);
+  assert.equal(bindings[0].key, 'Escape');
+  assert.deepEqual(bindings.slice(1).map(binding => binding.key), ['[', 'q', 'w']);
 });
 
 test('failed save keeps the dialog draft, retry saves conflicts and closes once', () => {
   const { api, events } = setup();
-  api.replace('cursor.left', 0, captureKey({ key: 's' }));
+  api.setSlot('cursor.left', 0, captureKey({ key: 's' }));
   globalThis.localStorage = { setItem() { throw new Error('quota'); } };
   api.save();
   assert.match(api.draftForTest().saveError, /quota/);
