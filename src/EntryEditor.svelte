@@ -1385,8 +1385,8 @@
     {/if}
 
     <div class="translation-block">
-      <div class="translation-field">
-        <div class="translation-mirror" aria-hidden="true">{(translation || 'Tabを押して訳文を入力') + '\u200b'}</div>
+      <div class="translation-field" class:translation-editing={mode === 'TRANSLATION'}>
+        <div class="translation-mirror" aria-hidden="true">{(translation || 'Tabを押して訳文を入力') + '\u200b'}{#if mode === 'TRANSLATION'}<span class="translation-button-space"></span>{/if}</div>
         <textarea bind:value={translation} aria-label="訳文" rows="1"
           readonly={mode !== 'TRANSLATION'} tabindex={mode === 'TRANSLATION' ? 0 : -1}
           placeholder="Tabを押して訳文を入力" use:focusTranslation={mode === 'TRANSLATION'}
@@ -1424,9 +1424,9 @@
               enterNormal();
             }
           }}></textarea>
+        {#if mode === 'TRANSLATION'}
+          <button class="translation-done" type="button" on:click={enterNormal}>完了</button>
+        {/if}
       </div>
-      {#if mode === 'TRANSLATION'}
-        <button type="button" on:click={enterNormal}>完了</button>
-      {/if}
     </div>
   </section>

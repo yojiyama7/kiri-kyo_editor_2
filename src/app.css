@@ -205,31 +205,44 @@ input.custom-marker-input { position: absolute; z-index: 4; }
 .content-highlight { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; background: rgb(37 99 235 / 9%); pointer-events: none; }
 .selection-guide { margin: 12px 0 0; color: #555; font-size: 12px; }
 
-.translation-block { margin-top: 0; padding-top: 8px; border-top: 1px solid #ccc; }
+.translation-block { margin-top: 0; padding-top: 12px; border-top: 1px solid #ccc; }
 .input-row { display: flex; gap: 10px; }
 input, textarea { width: 100%; padding: 10px; color: #111; background: white; border: 1px solid #777; outline: none; }
 input { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 21px; }
 textarea { resize: vertical; line-height: 1.7; }
 input:focus, textarea:focus { border-color: #111; }
-.translation-field { position: relative; }
+.translation-field {
+  --translation-line-height: 40px;
+  --translation-button-width: 72px;
+  position: relative;
+  margin: 0 4px 8px;
+}
 .translation-mirror, .translation-field textarea {
   display: block;
   width: 100%;
   min-width: 0;
   margin: 0;
-  padding: 0;
+  padding: 8px 12px;
   border: 0;
   border-radius: 0;
   font: inherit;
   font-size: 20px;
-  line-height: 1.7;
+  line-height: var(--translation-line-height);
   letter-spacing: normal;
   white-space: pre-wrap;
   overflow-wrap: break-word;
   word-break: normal;
   tab-size: 8;
 }
-.translation-mirror { visibility: hidden; min-height: 34px; }
+.translation-mirror { visibility: hidden; min-height: calc(var(--translation-line-height) + 16px); }
+/* This unbreakable tail reserves the button and its gap on the last line.
+   If it does not fit, only the tail wraps, leaving the text layout unchanged. */
+.translation-button-space {
+  display: inline-block;
+  width: calc(var(--translation-button-width) + 12px);
+  height: var(--translation-line-height);
+  vertical-align: top;
+}
 .translation-field textarea {
   position: absolute;
   inset: 0;
@@ -240,10 +253,22 @@ input:focus, textarea:focus { border-color: #111; }
   background: transparent;
   appearance: none;
 }
-.translation-field textarea:not([readonly]) { outline: 1px solid #777; }
-.translation-field textarea:not([readonly]):focus { outline-color: #111; }
+.translation-field.translation-editing { outline: 1px solid #777; }
+.translation-field.translation-editing:focus-within { outline-color: #111; }
 .translation-field textarea::placeholder { color: #111; opacity: 1; }
 .input-row button, .translation-block button { align-self: flex-start; padding: 10px 16px; color: #111; background: #fff; border: 1px solid #777; cursor: pointer; white-space: nowrap; }
+.translation-field .translation-done {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  width: var(--translation-button-width);
+  height: var(--translation-line-height);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  line-height: 1;
+}
 
 footer { padding: 10px 0; color: #666; border-top: 1px solid #ccc; font-size: 11px; font-family: ui-monospace, monospace; }
 
