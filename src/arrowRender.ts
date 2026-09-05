@@ -79,9 +79,10 @@ export function renderArrows(layout: DiagramLayout, regionsBySlot: ReadonlyMap<s
         y: attachment?.y ?? layout.slotY.get(slotId)! * 38
           + (extendAboveSlot ? -EMPTY_SLOT_EXTENSION : attachToSlotTop ? 0 : 28) };
     }).sort((a, b) => a.row - b.row || a.x - b.x);
-    // A shared target moves only when at least one source enters from outside
-    // a qualifying underline. Membership stays the same across wrapped rows.
-    if (!apposition && basicContentGroups.some((contents) => contents.has(arrow.targetSlotId)
+    // An empty shared target moves only when at least one source enters from
+    // outside a qualifying underline. Membership stays the same across wrapped rows.
+    if (!apposition && slotById.get(arrow.targetSlotId)?.marker === undefined
+      && basicContentGroups.some((contents) => contents.has(arrow.targetSlotId)
       && arrow.sourceSlotIds.some((id) => !contents.has(id)))) {
       const target = endpoints.find((endpoint) => endpoint.target)!;
       const first = endpoints[0];

@@ -221,7 +221,7 @@ test('basic targets use the opposite inset only at right and left edges, keeping
   }
 });
 
-test('underlines made only of basic slots inset marked and pseudo targets regardless of kind', () => {
+test('underlines made only of basic slots inset empty targets but center marked targets regardless of token kind', () => {
   for (const tokenKind of [undefined, 'real', 'pseudo']) {
     for (const marker of [undefined, 'o']) {
       for (const [source, insetFromLeft] of [['a', true], ['h', false]]) {
@@ -236,7 +236,8 @@ test('underlines made only of basic slots inset marked and pseudo targets regard
           const r = render(d, width);
           const target = stems(r, 'd')[0];
           const region = r.view.regionsBySlot.get('d').at(-1);
-          assert.equal(target.x, insetFromLeft ? region.left + 7 : region.right - 7);
+          assert.equal(target.x, marker ? center(r, 'd')
+            : insetFromLeft ? region.left + 7 : region.right - 7);
           assert.equal(target.y, marker ? 28 : -8);
           const segment = r.segments.find((s) => s.row === target.row);
           assert.equal(insetFromLeft ? segment.right : segment.left, target.x);
@@ -246,7 +247,7 @@ test('underlines made only of basic slots inset marked and pseudo targets regard
   }
 });
 
-test('internal and interior targets stay centered; external sources inset only edge targets', () => {
+test('marked, internal and interior targets stay centered; external sources inset only empty edge targets', () => {
   for (const kind of ['basic', 'composite']) {
     const d = initial();
     const members = ['b', 'd', 'f'];
@@ -262,7 +263,8 @@ test('internal and interior targets stay centered; external sources inset only e
         const r = render(document, width);
         const target = stems(r, 'd')[0];
         const region = r.view.regionsBySlot.get('d').at(-1);
-        const expected = side === 'center' ? center(r, 'd') : side === 'left' ? region.left + 7 : region.right - 7;
+        const expected = kind === 'composite' || side === 'center'
+          ? center(r, 'd') : side === 'left' ? region.left + 7 : region.right - 7;
         assert.equal(target.x, expected);
         const segment = r.segments.find((s) => s.row === target.row);
         assert.ok(segment.left <= target.x && target.x <= segment.right);
@@ -301,7 +303,7 @@ test('T and D halves use an inset only with an external source and a target at a
   }
 });
 
-test('marked T and D halves qualify as direct basic contents, including halves of underlines', () => {
+test('marked T and D half targets stay centered, including halves of underlines', () => {
   for (const kind of ['t', 'd']) {
     for (const owner of ['b', 'inner']) {
       let d = initial();
@@ -321,7 +323,7 @@ test('marked T and D halves qualify as direct basic contents, including halves o
         const r = render(document);
         const target = stems(r, targetId)[0];
         const region = r.view.regionsBySlot.get(targetId).at(-1);
-        assert.equal(target.x, region.right - 7);
+        assert.equal(target.x, (region.left + region.right) / 2);
         assert.equal(target.y, r.layout.slotY.get(targetId) * 38 + 28);
         assert.equal(r.segments[0].left, target.x);
       }
@@ -352,9 +354,9 @@ test('nested underlines and split owners disqualify the whole direct-content lis
       assert.equal(stems(r, targetSlotId)[0].y, r.layout.slotY.get(targetSlotId) * 38);
     }
     if (nested) {
-      // b still qualifies through its own immediate underline.
+      // b is marked, so its own immediate underline does not trigger the empty-target inset.
       const r = render({ ...d, arrows: [{ sourceSlotId: 'h', targetSlotId: 'b' }] });
-      assert.equal(stems(r, 'b')[0].x, 103);
+      assert.equal(stems(r, 'b')[0].x, center(r, 'b'));
     }
   }
 });
@@ -572,16 +574,16 @@ test('offsets stay inside narrow T half slots', () => {
   assert.equal(stems(r, source).find((s) => s.target).x, center(r, source));
 });
 
-test('a marked target inside a one-slot composite underline uses the inset after source separation', () => {
+test('a marked target inside a one-slot composite underline stays centered after source separation', () => {
   let d = initial();
   d.groups.push({ id: 'g', slotId: 'group', slots: ['b'], kind: 'composite' });
   d.slots.push({ id: 'group', marker: 'marker.adverb' });
   d = connectArrow(connectArrow(d, 'a', 'group'), 'group', 'b');
   const r = render(d);
   const outgoing = r.segments.find((s) => s.targetSlotId === 'b');
-  assert.equal(outgoing.stems.find((s) => s.target).x, 103);
+  assert.equal(outgoing.stems.find((s) => s.target).x, center(r, 'b'));
   assert.equal(outgoing.stems.find((s) => !s.target).x, 91);
-  assert.deepEqual([outgoing.left, outgoing.right], [91, 103]);
+  assert.deepEqual([outgoing.left, outgoing.right], [center(r, 'b'), 91]);
 });
 
 test('another unshifted source at the old extreme keeps the shared horizontal connected', () => {
