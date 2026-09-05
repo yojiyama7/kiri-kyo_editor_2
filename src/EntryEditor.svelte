@@ -1415,7 +1415,3 @@
       {/if}
     </div>
   </section>
-
-  <footer class="entry-stats">
-    <span>{activeGroup && active ? `${GROUP_KIND_LABELS[activeGroup.kind]} / ` : ''}{tokens.length} tokens / {groups.length} structures / {splits.filter(split => split.kind !== 'd').length} T / {splits.filter(split => split.kind === 'd').length} D / {arrows.length} arrows</span>
-  </footer>
