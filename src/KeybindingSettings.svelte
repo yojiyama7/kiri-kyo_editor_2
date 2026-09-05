@@ -91,29 +91,36 @@
     <p>OS・ブラウザーが先に処理するキーは、アプリへ届かない場合があります。この競合の完全検出はできません。</p>
   </header>
   <div class="settings-content">
-    <section class="binding-list" aria-label="固定優先順位順の操作">
+    <section class="binding-list" role="table" aria-label="固定優先順位順の操作">
+      <div class="binding-header" role="row">
+        <span role="columnheader">操作</span>
+        <span role="columnheader">キーバインド1</span>
+        <span role="columnheader">キーバインド2</span>
+        <span role="columnheader">キーバインド3</span>
+        <span role="columnheader">初期化</span>
+      </div>
       {#each OPERATIONS as operation, rank}
-        <div class="binding-row">
-          <div><strong>{rank + 1}. {operation.label}</strong><small>{categories[operation.category - 1]} · 適用モード: {operation.modes.join(' / ')}</small></div>
-          <div class="binding-slots">
-            {#each slotIndexes as index}
-              {@const binding = editableBindings(operation.id)[index]}
-              <div class="binding-slot">
-                {#if operation.sequence}
-                  <input aria-label={`${operation.label} 割り当て${index + 1}`} value={binding?.kind === 'sequence' ? binding.sequence : ''} placeholder="empty"
-                    data-operation={operation.id} data-slot={index}
-                    on:input={(event) => updateSequence(event, operation.id, index)}
-                    on:keydown={(event) => clearSlot(event, operation.id, index)} />
-                {:else}
-                  <input readonly aria-label={`${operation.label} 割り当て${index + 1}`}
-                    value={binding ? bindingLabel(binding) : ''} placeholder="empty"
-                    data-operation={operation.id} data-slot={index}
-                    class:recording={recording === `${operation.id}:${index}`}
-                    on:focus={() => { recording = `${operation.id}:${index}`; }} on:blur={() => { recording = null; }}
-                    on:keydown={(event) => record(event, operation.id, index)} />
-                {/if}
-              </div>
-            {/each}
+        <div class="binding-row" role="row">
+          <div class="binding-operation" role="rowheader"><strong>{rank + 1}. {operation.label}</strong><small>{categories[operation.category - 1]} · 適用モード: {operation.modes.join(' / ')}</small></div>
+          {#each slotIndexes as index}
+            {@const binding = editableBindings(operation.id)[index]}
+            <div class="binding-slot" role="cell">
+              {#if operation.sequence}
+                <input aria-label={`${operation.label} 割り当て${index + 1}`} value={binding?.kind === 'sequence' ? binding.sequence : ''} placeholder="empty"
+                  data-operation={operation.id} data-slot={index}
+                  on:input={(event) => updateSequence(event, operation.id, index)}
+                  on:keydown={(event) => clearSlot(event, operation.id, index)} />
+              {:else}
+                <input readonly aria-label={`${operation.label} 割り当て${index + 1}`}
+                  value={binding ? bindingLabel(binding) : ''} placeholder="empty"
+                  data-operation={operation.id} data-slot={index}
+                  class:recording={recording === `${operation.id}:${index}`}
+                  on:focus={() => { recording = `${operation.id}:${index}`; }} on:blur={() => { recording = null; }}
+                  on:keydown={(event) => record(event, operation.id, index)} />
+              {/if}
+            </div>
+          {/each}
+          <div class="binding-reset" role="cell">
             <button type="button" on:click={() => reset(operation.id)}>初期化</button>
           </div>
         </div>
@@ -151,11 +158,14 @@
   h2 { margin: 0 0 8px; }
   .settings-content { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); height: 58vh; overflow: hidden; }
   .binding-list { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-  .binding-row { padding: 12px 16px; border-bottom: 1px solid #ddd; }
+  .binding-header, .binding-row { display: grid; grid-template-columns: minmax(210px, 1fr) repeat(3, 118px) max-content; gap: 8px; align-items: center; min-width: 680px; padding: 10px 16px; }
+  .binding-header { position: sticky; top: 0; z-index: 1; border-bottom: 1px solid #bbb; background: #eee; color: #555; font-size: .75rem; font-weight: 600; }
+  .binding-row { border-bottom: 1px solid #ddd; }
+  .binding-operation { min-width: 0; }
   small { display: block; color: #666; font-size: .75rem; margin-top: 4px; }
-  .binding-slots { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
-  .binding-slot { display: flex; align-items: center; gap: 4px; }
-  input { width: 130px; padding: 6px; border: 1px solid #aaa; border-radius: 4px; }
+  .binding-slot { min-width: 0; }
+  .binding-reset { justify-self: end; }
+  input { box-sizing: border-box; width: 100%; padding: 6px; border: 1px solid #aaa; border-radius: 4px; }
   input::placeholder { color: #777; opacity: .55; }
   input.recording { outline: 2px solid #2672ae; }
   button { padding: 6px 9px; cursor: pointer; }

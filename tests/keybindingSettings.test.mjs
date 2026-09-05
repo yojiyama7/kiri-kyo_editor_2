@@ -30,7 +30,13 @@ function setup() {
 
 test('settings renders three editable slots without fixed Esc or add/remove buttons', () => {
   const { html } = setup();
+  const source = readFileSync(new URL('../src/KeybindingSettings.svelte', import.meta.url), 'utf8');
   assert.ok(html.includes('固定優先順位順の操作'));
+  assert.ok(html.includes('role="table"'));
+  assert.ok(html.includes('キーバインド1'));
+  assert.ok(html.includes('キーバインド2'));
+  assert.ok(html.includes('キーバインド3'));
+  assert.match(source, /\.binding-header, \.binding-row \{[^}]*grid-template-columns: minmax\(210px, 1fr\) repeat\(3, 118px\) max-content/s);
   assert.ok(html.includes('競合警告'));
   assert.ok(html.includes('NORMAL'));
   assert.ok(html.includes('MARKER_SEQUENCE'));
