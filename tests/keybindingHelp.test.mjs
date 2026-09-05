@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { OPERATIONS, INPUT_MODES } from '../src/keybindings.ts';
-import { MODE_ABBREVIATIONS, MODE_HELP, operationHelp } from '../src/keybindingHelp.ts';
+import { MODE_ABBREVIATIONS, MODE_DESCRIPTIONS, MODE_HELP, operationHelp } from '../src/keybindingHelp.ts';
 
 test('every configurable operation has complete help text', () => {
   for (const operation of OPERATIONS) {
@@ -22,4 +22,9 @@ test('every input mode has a unique one or two letter abbreviation', () => {
   assert.deepEqual(Object.keys(MODE_ABBREVIATIONS).sort(), [...INPUT_MODES].sort());
   assert.ok(Object.values(MODE_ABBREVIATIONS).every(label => /^[A-Z]{1,2}$/.test(label)));
   assert.equal(new Set(Object.values(MODE_ABBREVIATIONS)).size, INPUT_MODES.length);
+});
+
+test('every input mode has a detailed description', () => {
+  assert.deepEqual(Object.keys(MODE_DESCRIPTIONS).sort(), [...INPUT_MODES].sort());
+  assert.ok(Object.values(MODE_DESCRIPTIONS).every(description => description.length >= 30));
 });

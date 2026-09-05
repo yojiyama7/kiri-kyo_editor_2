@@ -2,12 +2,13 @@
   import { onMount, tick } from 'svelte';
   import { INPUT_MODES, SETTINGS_OPERATIONS, getSettings, defaultSettings, captureKey, bindingLabel, validateSettings, findConflicts,
     operationDefinition, saveSettings, isComposingInput, type Binding, type InputMode, type OperationDefinition, type OperationId } from './keybindings';
-  import { MODE_ABBREVIATIONS, MODE_HELP, operationHelp } from './keybindingHelp';
+  import { MODE_ABBREVIATIONS, MODE_DESCRIPTIONS, MODE_HELP, operationHelp } from './keybindingHelp';
   import { lockDocumentScroll } from './documentScroll';
   export let onclose: () => void;
   export let onsaved: () => void;
   let dialog: HTMLDialogElement;
   let helpDialog: HTMLDialogElement;
+  let modeHelpDialog: HTMLDialogElement;
   let selectedHelp: OperationDefinition | null = null;
   let draft = structuredClone(getSettings());
   let saveError = '';
@@ -75,6 +76,8 @@
     helpDialog.close();
     selectedHelp = null;
   }
+  function openModeHelp() { modeHelpDialog.showModal(); }
+  function closeModeHelp() { modeHelpDialog.close(); }
   function assignmentSummary(operation: OperationDefinition): string {
     const labels = editableBindings(operation.id).map(bindingLabel);
     if (operation.category === 1) labels.unshift('Esc（固定）');
@@ -124,7 +127,8 @@
           {/each}
         </select>
         <div class="mode-filter-help">
-          <button type="button" class="help-button" aria-label="モードアイコンの説明" aria-describedby="mode-icon-key">?</button>
+          <button type="button" class="help-button" aria-label="モードアイコンの詳細説明" aria-describedby="mode-icon-key"
+            aria-haspopup="dialog" on:click={openModeHelp}>?</button>
           <div class="mode-icon-key" id="mode-icon-key" role="tooltip">
             <strong>モードアイコン</strong>
             <ul>
@@ -214,6 +218,27 @@
   </footer>
 </dialog>
 
+<dialog bind:this={modeHelpDialog} class="operation-help mode-help-dialog" aria-labelledby="mode-help-title"
+  on:cancel|preventDefault={closeModeHelp} on:keydown|stopPropagation>
+  <div class="operation-help-heading">
+    <h2 id="mode-help-title">モードアイコンの説明</h2>
+    <button type="button" aria-label="モードの詳細説明を閉じる" on:click={closeModeHelp}>閉じる</button>
+  </div>
+  <p class="mode-help-introduction">各操作を実行できる前提モードを示すアイコンです。</p>
+  <ul class="mode-detail-list">
+    {#each INPUT_MODES as mode}
+      <li>
+        <div class="mode-detail-heading">
+          <strong class="mode-icon" aria-hidden="true">{MODE_ABBREVIATIONS[mode]}</strong>
+          <h3>{MODE_HELP[mode]}</h3>
+          <code>{mode}</code>
+        </div>
+        <p>{MODE_DESCRIPTIONS[mode]}</p>
+      </li>
+    {/each}
+  </ul>
+</dialog>
+
 <dialog bind:this={helpDialog} class="operation-help" aria-labelledby="operation-help-title"
   on:cancel|preventDefault={closeHelp} on:keydown|stopPropagation>
   {#if selectedHelp}
@@ -291,6 +316,14 @@
   .operation-help section { margin-top: 18px; }
   .operation-help h3 { margin: 0 0 6px; font-size: .95rem; }
   .operation-help p { margin: 0; line-height: 1.65; }
+  .mode-help-dialog { width: min(680px, 90vw); }
+  .mode-help-introduction { margin-top: 16px !important; }
+  .mode-detail-list { display: grid; gap: 10px; margin: 16px 0 0; padding: 0; list-style: none; }
+  .mode-detail-list li { padding: 10px 12px; border-radius: 6px; background: #f4f6f8; }
+  .mode-detail-heading { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; }
+  .mode-detail-heading h3 { margin: 0; }
+  .mode-detail-heading code { color: #666; font-size: .72rem; }
+  .mode-detail-list p { color: #444; font-size: .85rem; }
   .mode-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 0; list-style: none; }
   .mode-list li { display: flex; gap: 5px; align-items: baseline; padding: 5px 8px; border-radius: 5px; background: #f0f3f6; font-size: .8rem; }
   .mode-list span { color: #555; }
