@@ -23,7 +23,8 @@ export type EntryEditorHandle = {
   selectFirst(): void;
   startInput(translationInput?: boolean): void;
   getInputMode(): EntryInputMode;
-  handleKeydown(event: KeyboardEvent): void;
+  resolveKeydown(event: KeyboardEvent): import('./keybindings.ts').Resolution;
+  handleKeydown(event: KeyboardEvent, resolved?: import('./keybindings.ts').Resolution): void;
 };
 
 export function createEntry(document: SavedState = {

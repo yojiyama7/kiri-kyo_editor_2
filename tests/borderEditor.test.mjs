@@ -58,7 +58,7 @@ before(async () => {
     const entries = editors.map((_, i) => ({ id: String(i) }));
     let activeEntryId = String(initialIndex);
     let openEntryMenuId = null;
-    const ready = true, restoring = false, bulkAfterId = null;
+    const ready = true, restoring = false, bulkAfterId = null, settingsOpen = false;
     const updates = { schedule() {} };
     const persistence = { saveEntry() {} };
     const published = [];
@@ -93,7 +93,7 @@ function setup(initial = initialDocument()) {
       if (next) api.restore(next);
     },
   };
-  for (const name of ['snapshot', 'restore', 'handleKeydown', 'finishEditing', 'canSave', 'finishFormEditing', 'startInput', 'getInputMode', 'selectFirst', 'clickSlotId', 'finishMarkerInput', 'setSelectionForTest']) {
+  for (const name of ['snapshot', 'restore', 'resolveKeydown', 'handleKeydown', 'finishEditing', 'canSave', 'finishFormEditing', 'startInput', 'getInputMode', 'selectFirst', 'clickSlotId', 'finishMarkerInput', 'setSelectionForTest']) {
     Object.defineProperty(props, name, { set(value) { api[name] = value; } });
   }
   // Access body to force the lazy synchronous server render.
@@ -1532,4 +1532,91 @@ test('Ctrl+[ finishes English and translation editing without inserting a bracke
     finished.api.finishEditing();
     assert.deepEqual(editor.records, finished.records);
   }
+});
+
+test('configured movement wins over marker input at a boundary without falling through', async () => {
+  const { defaultSettings, applySettings, captureKey } = await import('../src/keybindings.ts');
+  const settings = defaultSettings();
+  settings.bindings['cursor.left'] = [captureKey({ key: 's' })];
+  applySettings(settings);
+  try {
+    const e = setup();
+    const before = e.api.snapshot();
+    e.key('s');
+    assert.deepEqual(e.api.snapshot(), before);
+    assert.equal(e.display().markerInput.active, false);
+  } finally { applySettings(defaultSettings()); }
+});
+
+test('configured entry movement competes with cursor movement through the actual app dispatcher', async () => {
+  const { defaultSettings, applySettings, captureKey } = await import('../src/keybindings.ts');
+  const settings = defaultSettings();
+  settings.bindings['entry.next'] = [captureKey({ key: 'l' })];
+  applySettings(settings);
+  try {
+    const editors = [setup(), setup()];
+    const router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation, editors.map(e => e.api), 0);
+    router.handleKeydown({ key: 'l', target: null, preventDefault() {} });
+    assert.equal(router.activeIndex(), 0);
+    assert.equal(editors[0].api.snapshot().cursor.x, 1);
+  } finally { applySettings(defaultSettings()); }
+});
+
+test('remapped modified starts and form input/commit are dispatched without default-key guards', async () => {
+  const { defaultSettings, applySettings, captureKey } = await import('../src/keybindings.ts');
+  const settings = defaultSettings();
+  settings.bindings['form.start'] = [captureKey({ key: 'q', metaKey: true })];
+  settings.bindings['form.past'] = [{ kind: 'sequence', sequence: 'zz' }];
+  settings.bindings['form.commit'] = [captureKey({ key: 'w', altKey: true, code: 'KeyW' })];
+  applySettings(settings);
+  try {
+    const e = setup();
+    e.key('f'); assert.equal(e.display().mode, 'NORMAL');
+    e.key('q', { metaKey: true }); assert.equal(e.display().mode, 'FORM');
+    e.key('z'); e.key('z'); e.key('w', { altKey: true, code: 'KeyW' });
+    assert.equal(e.display().mode, 'NORMAL');
+    assert.equal(e.api.snapshot().document.tokens[0].form, 'form.past');
+  } finally { applySettings(defaultSettings()); }
+});
+
+test('a duplicate marker string applies only the fixed-priority marker in the real editor', async () => {
+  const { defaultSettings, applySettings } = await import('../src/keybindings.ts');
+  const settings = defaultSettings();
+  settings.bindings['marker.subject'] = [{ kind: 'sequence', sequence: 'zz' }];
+  settings.bindings['marker.verb'] = [{ kind: 'sequence', sequence: 'zz' }];
+  applySettings(settings);
+  try {
+    const e = setup();
+    e.key('z'); e.key('z');
+    assert.equal(e.api.snapshot().document.slots[0].marker, 'marker.subject');
+    assert.equal(e.records.length, 1);
+  } finally { applySettings(defaultSettings()); }
+});
+
+test('a Unicode sequence is applied from the shared resolver and is one undoable edit', async () => {
+  const { defaultSettings, applySettings } = await import('../src/keybindings.ts');
+  const settings = defaultSettings();
+  settings.bindings['marker.subject'] = [{ kind: 'sequence', sequence: '😀😀' }];
+  applySettings(settings);
+  try {
+    const e = setup();
+    e.key('😀'); e.key('😀');
+    assert.equal(e.api.snapshot().document.slots[0].marker, 'marker.subject');
+    e.key('u');
+    assert.equal(e.api.snapshot().document.slots[0].marker, undefined);
+  } finally { applySettings(defaultSettings()); }
+});
+
+test('movement in the middle of a configured marker sequence ends the buffer and moves once', async () => {
+  const { defaultSettings, applySettings, captureKey } = await import('../src/keybindings.ts');
+  const settings = defaultSettings();
+  settings.bindings['cursor.right'] = [captureKey({ key: 'a' })];
+  applySettings(settings);
+  try {
+    const e = setup();
+    e.key('s'); e.key('a');
+    assert.equal(e.api.snapshot().document.slots[0].marker, 'marker.subject');
+    assert.equal(e.api.snapshot().cursor.x, 1);
+    assert.equal(e.display().markerInput.buffer, '');
+  } finally { applySettings(defaultSettings()); }
 });

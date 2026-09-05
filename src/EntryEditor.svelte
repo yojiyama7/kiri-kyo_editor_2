@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { moveBorderOperation } from './borderNavigation';
+  import { resolveInput, sequenceBindings, getSettings, isComposingInput, isRepeatedInput, isModifierInput, operationMatches, type Candidate, type Resolution, type InputMode, type BindingSettings } from './keybindings';
   import { matchesKeyboardInput } from './keyboard';
-  import { resolveKeyboardOperation, type KeyboardOperationId } from './keyboardOperations';
+  import { type KeyboardOperationId } from './keyboardOperations';
   import { createGroup, FORM_LABELS, GROUP_KIND_LABELS, isBracket, type BracketText, type Group, type SavedState, type SlotSplit, type Arrow, isArrowMarker, isAppositionMarker, isAppositionEndpoint } from './model';
   import { isVirtualBracket, isSlotEditable, effectiveSlotMarker, groupContentSlotIds, type FormId } from './model';
-  import { formIdForInput, formTargetAtSlot, formTargets, setFormAtSlot, nextFormInput, formDisplay, type FormSession } from './formEditing';
+  import { formIdForInput, formTargetAtSlot, formTargets, setFormAtSlot, formDisplay, type FormSession } from './formEditing';
   import { renderForms, visibleFormTargets } from './formRender';
   import { connectArrow, connectApposition, deleteArrow, pruneArrows } from './arrowEditing';
   import { renderArrows } from './arrowRender';
@@ -11,7 +13,7 @@
   import { deleteGroup } from './structureDeletion';
   import { BRACKET_GUTTER, BRACKET_SLOT_MIN_WIDTH, CLOSE_BRACKET_WIDTH, computeRenderLayout } from './renderLayout';
   import { bracketBorderFromRegion, insertBracket, deleteBracket } from './bracketEditing';
-  import { borderFromCursor, cursorFromBorder, moveBorder, borderPosition } from './borderNavigation';
+  import { borderFromCursor, cursorFromBorder, borderPosition } from './borderNavigation';
   import { realSentence, replaceEnglishSentence, pseudoTokenAtSlot, insertPseudoToken, insertPseudoTokens, deletePseudoToken, editPseudoToken, splitPseudoInput, pseudoInputAction, type PseudoInputSession } from './pseudoEditing';
   import { pseudoPreview, widthsByToken, inputOverlayOffset } from './pseudoPreview';
   import { measureLabels } from './labelMeasurements';
@@ -19,9 +21,9 @@
   import { enterBasicGroup, settleBasicGroups } from './groupEditing';
   import type { EntryEditorState } from './entryDocument';
   import type { EntryInputMode } from './entryShortcuts';
-  import { markerFromText, markerLabel, nextMarkerInput, setSlotMarker, type MarkerId } from './markers';
+  import { markerFromText, markerLabel, setSlotMarker, type MarkerId } from './markers';
   import { customMarkerInputAction, type CustomMarkerInputSession } from './customMarkerEditing';
-  import { DEFAULT_FORM_INPUT_BINDINGS, operationKeyLabel } from './inputConfig';
+  import { operationKeyLabel } from './inputConfig';
   import {
     type Cursor,
     computeLayout,
@@ -59,7 +61,9 @@
     .map(markerLabel).join(' / ');
   const appositionMarkerLabels = (['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement', 'marker.plus'] satisfies MarkerId[])
     .map(markerLabel).join(' / ');
-  const formInputGuide = DEFAULT_FORM_INPUT_BINDINGS.map(binding => `${binding.sequence} ${FORM_LABELS[binding.value]}`).join(' / ');
+  export let bindingSettings: BindingSettings = getSettings();
+  $: formInputGuide = sequenceBindings<FormId>('form', bindingSettings).map(binding => `${binding.sequence} ${FORM_LABELS[binding.value]}`).join(' / ');
+  $: keyLabel = (operation: KeyboardOperationId, separator = ' / ') => { bindingSettings; return operationKeyLabel(operation, separator); };
   export let onrecord: (before: EditorSnapshot, after: EditorSnapshot) => void;
   export let onstate: (state: EntryEditorState) => void;
   export let onactivate: () => void;
@@ -377,9 +381,7 @@
 
   function handleCustomMarkerKeydown(event: KeyboardEvent) {
     if (!customMarkerInput) return;
-    if (resolveKeyboardOperation(event, [
-      { operation: 'history.redo', rules: [{ key: 'r', ctrlKey: true, repeat: null }] },
-    ]) === 'history.redo') event.preventDefault();
+    if (operationMatches(event, 'history.redo')) event.preventDefault();
     const action = customMarkerInputAction(event, customMarkerInput.composing);
     if (!action) return;
     event.preventDefault();
@@ -475,9 +477,7 @@
   function handlePseudoKeydown(event: KeyboardEvent) {
     if (!pseudoInput) return;
     // Preserve the existing Ctrl+r reload guard without running document redo.
-    if (resolveKeyboardOperation(event, [
-      { operation: 'history.redo', rules: [{ key: 'r', ctrlKey: true, repeat: null }] },
-    ]) === 'history.redo') event.preventDefault();
+    if (operationMatches(event, 'history.redo')) event.preventDefault();
     const action = pseudoInputAction(event, pseudoInput.composing);
     if (!action) return;
     event.preventDefault();
@@ -647,10 +647,12 @@
     markerBuffer = '';
   }
 
-  function handleMarkerKey(event: KeyboardEvent): boolean {
+  function handleMarkerKey(event: KeyboardEvent, winner: Candidate): boolean {
     const slotId = currentSlotId();
     if (markerSlotId !== undefined && markerSlotId !== slotId) finishMarkerInput();
-    const result = nextMarkerInput(markerBuffer, event);
+    const result = { handled: true, restarted: winner.restarted,
+      marker: winner.complete ? winner.operation as MarkerId : undefined,
+      buffer: winner.hasLonger ? winner.buffer! : '' };
     if (result.handled && matchesKeyboardInput(event, [
       { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
     ])) {
@@ -697,40 +699,6 @@
     if (next !== current) history.record(before, snapshot());
   }
 
-  function handleFormKeydown(event: KeyboardEvent) {
-    if (!formSession || matchesKeyboardInput(event, [
-      { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
-      { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-    ])) return;
-    // Movement is dispatched separately; consume other commands before NORMAL.
-    event.preventDefault();
-    const ctrlBracket = matchesKeyboardInput(event, [{ key: '[', ctrlKey: true }]);
-    if (matchesKeyboardInput(event, [
-      { metaKey: true, ctrlKey: null, altKey: null, shiftKey: null, repeat: null, isComposing: null },
-      { altKey: true, ctrlKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-      { shiftKey: true, ctrlKey: null, altKey: null, metaKey: null, repeat: null, isComposing: null },
-      { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
-    ]) || (matchesKeyboardInput(event, [
-      { ctrlKey: true, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-    ]) && !ctrlBracket)) return;
-    const operation = resolveKeyboardOperation(event, [
-      { operation: 'editor.cancel', rules: [{ key: 'Escape' }, { key: '[', ctrlKey: true }] },
-      { operation: 'form.clear', rules: [{ key: 'x' }] },
-      { operation: 'form.commit', rules: [{ key: 'Enter' }] },
-    ]);
-    if (operation === 'editor.cancel') finishFormEditing();
-    else if (operation === 'form.clear') commitForm();
-    else if (operation === 'form.commit') {
-      if (!formSession.buffer) enterNormal();
-      else {
-        const form = formIdForInput(formSession.buffer);
-        if (form) commitForm(form);
-      }
-    } else {
-      formSession = { ...formSession, buffer: nextFormInput(formSession.buffer, event).buffer };
-    }
-  }
-
   export function finishFormEditing() {
     if (mode !== 'FORM' || !formSession) return;
     const form = formIdForInput(formSession.buffer);
@@ -738,97 +706,57 @@
     else enterNormal();
   }
 
-  export function handleKeydown(event: KeyboardEvent) {
+  export function resolveKeydown(event: KeyboardEvent): Resolution {
+    return resolveInput(event, { mode: mode as InputMode, buffer: mode === 'FORM' ? formSession?.buffer : markerBuffer });
+  }
+
+  export function handleKeydown(event: KeyboardEvent, resolved = resolveKeydown(event)) {
     if (event.target instanceof Element && event.target.closest('.debug-panel')) return;
-    if (mode === 'FORM') {
-      const movement = resolveKeyboardOperation(event, [
-        { operation: 'cursor.left', rules: [{ key: ['h', 'ArrowLeft'], shiftKey: null, repeat: null }] },
-        { operation: 'cursor.right', rules: [{ key: ['l', 'ArrowRight'], shiftKey: null, repeat: null }] },
-        { operation: 'cursor.down', rules: [{ key: ['j', 'ArrowDown'], shiftKey: null, repeat: null }] },
-        { operation: 'cursor.up', rules: [{ key: ['k', 'ArrowUp'], shiftKey: null, repeat: null }] },
-        { operation: 'cursor.rowStart', rules: [{ key: '0', shiftKey: null, repeat: null }] },
-        { operation: 'cursor.rowEnd', rules: [{ key: '$', shiftKey: null, repeat: null }] },
-      ]);
-      if (!matchesKeyboardInput(event, [
-        { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
-        { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-      ]) && movement) finishFormEditing();
-      else { handleFormKeydown(event); return; }
-    }
     if (mode === 'PSEUDO_INPUT') { handlePseudoKeydown(event); return; }
     if (mode === 'MARKER_INPUT') { handleCustomMarkerKeydown(event); return; }
-    if (matchesKeyboardInput(event, [
-      { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
-      { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-    ])) return;
-    const globalOperation = resolveKeyboardOperation(event, [
-      { operation: 'editor.cancel', rules: [{ key: '[', ctrlKey: true, repeat: null }] },
-      { operation: 'history.redo', rules: [{ key: 'r', ctrlKey: true, repeat: null }] },
-    ]);
-    // Resolve the Escape alias before '[' can insert a bracket or Ctrl is filtered.
-    if (globalOperation === 'editor.cancel') {
-      event.preventDefault();
-      enterNormal();
+    if (isComposingInput(event)) return;
+    if (mode === 'INSERT' || mode === 'TRANSLATION') {
+      if (resolved.winner?.operation === 'editor.cancel' || resolved.winner?.operation === 'translation.commit') { event.preventDefault(); enterNormal(); }
+      else if (operationMatches(event, 'history.redo')) event.preventDefault();
       return;
     }
-    const redo = globalOperation === 'history.redo';
-    // Ctrl+r must never reload the page, including while a text field is open.
-    if (redo) event.preventDefault();
-    if (mode === 'INSERT' || mode === 'TRANSLATION') return;
-    // Shift/CapsLock must not interrupt a case-sensitive sequence such as nC.
-    if (matchesKeyboardInput(event, [
-      { key: ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'], ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
-    ])) return;
-
-    if (redo) {
-      finishMarkerInput();
+    const winner = resolved.winner;
+    if (!winner) {
+      if (mode === 'NORMAL' && !isModifierInput(event)) finishMarkerInput();
+      if (mode === 'FORM' || mode === 'BORDER') event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    if (winner.source === 'sequence') {
+      if (mode === 'NORMAL') handleMarkerKey(event, winner);
+      else if (mode === 'FORM' && formSession && !isRepeatedInput(event)) formSession = { ...formSession, buffer: winner.buffer! };
+      return;
+    }
+    const operation = winner.operation as KeyboardOperationId;
+    finishMarkerInput();
+    if (mode === 'FORM') {
+      if (operation.startsWith('cursor.')) finishFormEditing();
+      else {
+        if (isRepeatedInput(event)) return;
+        if (operation === 'editor.cancel') finishFormEditing();
+        else if (operation === 'form.clear') commitForm();
+        else if (operation === 'form.commit') {
+          if (!formSession?.buffer) enterNormal();
+          else { const form = formIdForInput(formSession.buffer); if (form) commitForm(form); }
+        } else if (operation === 'form.eraseInput' && formSession) {
+          formSession = { ...formSession, buffer: [...formSession.buffer].slice(0, -1).join('') };
+        }
+        return;
+      }
+    }
+    if (operation === 'history.redo') {
       if (mode === 'ARROW' || mode === 'BORDER') enterNormal();
       onundo(true);
       return;
     }
-    if (matchesKeyboardInput(event, [
-      { ctrlKey: true, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-      { metaKey: true, ctrlKey: null, altKey: null, shiftKey: null, repeat: null, isComposing: null },
-      { altKey: true, ctrlKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-    ])) {
-      finishMarkerInput();
-      return;
-    }
-    if (mode === 'NORMAL' && handleMarkerKey(event)) return;
-    const operation = resolveKeyboardOperation(event, [
-      { operation: 'form.start', rules: [{ key: 'f', shiftKey: null, repeat: null }] },
-      { operation: 'marker.customStart', rules: [{ key: '/', shiftKey: null, repeat: null }] },
-      { operation: 'history.undo', rules: [{ key: 'u', shiftKey: null, repeat: null }] },
-      { operation: 'bracket.insertSquareOpen', rules: [{ key: '[', repeat: null }] },
-      { operation: 'bracket.insertSquareClose', rules: [{ key: ']', repeat: null }] },
-      { operation: 'bracket.insertRoundOpen', rules: [{ key: '(', shiftKey: null, repeat: null }] },
-      { operation: 'bracket.insertRoundClose', rules: [{ key: ')', shiftKey: null, repeat: null }] },
-      { operation: 'bracket.insertAngleOpen', rules: [{ key: '<', shiftKey: null, repeat: null }] },
-      { operation: 'bracket.insertAngleClose', rules: [{ key: '>', shiftKey: null, repeat: null }] },
-      { operation: 'border.start', rules: [{ key: 'b', shiftKey: null, repeat: null }] },
-      { operation: 'arrow.start', rules: [{ key: 'r', shiftKey: null, repeat: null }] },
-      { operation: 'arrow.delete', rules: [{ key: 'R', shiftKey: null, repeat: null }] },
-      { operation: 'split.t', rules: [{ key: 't', shiftKey: null, repeat: null }] },
-      { operation: 'split.d', rules: [{ key: 'd', shiftKey: null, repeat: null }] },
-      { operation: 'marker.clear', rules: [{ key: 'x', shiftKey: null, repeat: null }] },
-      { operation: 'cursor.left', rules: [{ key: ['h', 'ArrowLeft'], shiftKey: null, repeat: null }] },
-      { operation: 'cursor.right', rules: [{ key: ['l', 'ArrowRight'], shiftKey: null, repeat: null }] },
-      { operation: 'cursor.down', rules: [{ key: ['j', 'ArrowDown'], shiftKey: null, repeat: null }] },
-      { operation: 'cursor.up', rules: [{ key: ['k', 'ArrowUp'], shiftKey: null, repeat: null }] },
-      { operation: 'cursor.rowStart', rules: [{ key: '0', shiftKey: null, repeat: null }] },
-      { operation: 'cursor.rowEnd', rules: [{ key: '$', shiftKey: null, repeat: null }] },
-      { operation: 'selection.toggle', rules: [{ key: 'v', shiftKey: null, repeat: null }] },
-      { operation: mode === 'ARROW' ? 'arrow.commit' : 'selection.commit', rules: [
-        { key: 'Enter', shiftKey: null, repeat: null },
-      ] },
-      { operation: 'editor.cancel', rules: [{ key: 'Escape', shiftKey: null, repeat: null }] },
-      { operation: 'english.start', rules: [{ key: 'i', shiftKey: null, repeat: null }] },
-      { operation: 'translation.start', rules: [{ key: 'Tab', shiftKey: null, repeat: null }] },
-      { operation: 'structure.delete', rules: [{ key: 'X', shiftKey: null, repeat: null }] },
-    ]);
     if (operation === 'form.start' && mode === 'NORMAL') {
       event.preventDefault();
-      if (matchesKeyboardInput(event, [{ key: 'f' }])) startForm();
+      if (!isRepeatedInput(event)) startForm();
       return;
     }
     if (operation === 'marker.customStart' && mode === 'NORMAL') {
@@ -858,25 +786,15 @@
       // Do not fall through to slot edits, native button activation or scrolling.
       event.preventDefault();
       pseudoMessage = '';
-      const borderOperation = resolveKeyboardOperation(event, [
-        { operation: 'editor.cancel', rules: [{ key: 'Escape', shiftKey: null, repeat: null }] },
-        { operation: 'pseudo.start', rules: [{ key: '/', shiftKey: null }] },
-        { operation: 'bracket.insertSquareOpen', rules: [{ key: '[', shiftKey: null }] },
-        { operation: 'bracket.insertSquareClose', rules: [{ key: ']', shiftKey: null }] },
-        { operation: 'bracket.insertRoundOpen', rules: [{ key: '(', shiftKey: null }] },
-        { operation: 'bracket.insertRoundClose', rules: [{ key: ')', shiftKey: null }] },
-        { operation: 'bracket.insertAngleOpen', rules: [{ key: '<', shiftKey: null }] },
-        { operation: 'bracket.insertAngleClose', rules: [{ key: '>', shiftKey: null }] },
-        { operation: 'bracket.deleteBefore', rules: [{ key: 'Backspace', shiftKey: null }] },
-        { operation: 'bracket.deleteAfter', rules: [{ key: 'Delete', shiftKey: null }] },
-      ]);
+      const borderOperation = operation;
+      if (isRepeatedInput(event) && !operation.startsWith('cursor.') && operation !== 'editor.cancel') return;
       const borderBracketText = bracketTextForOperation(borderOperation);
       if (borderOperation === 'editor.cancel') enterNormal();
       else if (borderOperation === 'pseudo.start') startPseudoInput();
       else if (borderBracketText !== undefined) insertBorderBracket(borderBracketText);
       else if (borderOperation === 'bracket.deleteBefore') deleteBorderItem(borderIndex - 1);
       else if (borderOperation === 'bracket.deleteAfter') deleteBorderItem(borderIndex);
-      else borderIndex = moveBorder(borderIndex, tokens.length, event);
+      else if (!isRepeatedInput(event) || operation.startsWith('cursor.') || operation === 'editor.cancel') borderIndex = moveBorderOperation(borderIndex, tokens.length, operation);
       return;
     }
     if (operation === 'border.start' && mode === 'NORMAL') {
@@ -1148,17 +1066,17 @@
       {#if arrowMessage || pseudoMessage}
         <p class="selection-guide">{arrowMessage || pseudoMessage}</p>
       {:else if mode === 'ARROW'}
-        <p class="selection-guide">{arrowKind === 'apposition' ? `同格: 相手は ${appositionMarkerLabels} または空。` : '矢印:'} 移動またはクリックで相手を選択 / {operationKeyLabel('arrow.commit')} で確定 / {operationKeyLabel('editor.cancel')} で取消</p>
+        <p class="selection-guide">{arrowKind === 'apposition' ? `同格: 相手は ${appositionMarkerLabels} または空。` : '矢印:'} 移動またはクリックで相手を選択 / {keyLabel('arrow.commit')} で確定 / {keyLabel('editor.cancel')} で取消</p>
       {:else if mode === 'VISUAL_MULTI'}
-        <p class="selection-guide">個別選択: 移動して {operationKeyLabel('selection.toggle')}、またはクリックで追加・解除 / {operationKeyLabel('selection.commit')} で下線作成 / {operationKeyLabel('editor.cancel')} で取消（{selectedSlots.length} 選択中）</p>
+        <p class="selection-guide">個別選択: 移動して {keyLabel('selection.toggle')}、またはクリックで追加・解除 / {keyLabel('selection.commit')} で下線作成 / {keyLabel('editor.cancel')} で取消（{selectedSlots.length} 選択中）</p>
       {:else if mode === 'BORDER'}
-        <p class="selection-guide">境目モード: {operationKeyLabel('cursor.left')} / {operationKeyLabel('cursor.right')} で移動 / {operationKeyLabel('cursor.rowStart')}・{operationKeyLabel('cursor.rowEnd')} で文頭・文末 ・ {operationKeyLabel('pseudo.start')} で疑似トークン作成 / {operationKeyLabel('bracket.deleteBefore')}・{operationKeyLabel('bracket.deleteAfter')} で隣の括弧・疑似トークン削除 / {operationKeyLabel('editor.cancel')} で Normal（境目 {borderIndex + 1} / {tokens.length + 1}）</p>
+        <p class="selection-guide">境目モード: {keyLabel('cursor.left')} / {keyLabel('cursor.right')} で移動 / {keyLabel('cursor.rowStart')}・{keyLabel('cursor.rowEnd')} で文頭・文末 ・ {keyLabel('pseudo.start')} で疑似トークン作成 / {keyLabel('bracket.deleteBefore')}・{keyLabel('bracket.deleteAfter')} で隣の括弧・疑似トークン削除 / {keyLabel('editor.cancel')} で Normal（境目 {borderIndex + 1} / {tokens.length + 1}）</p>
       {:else if mode === 'PSEUDO_INPUT'}
-        <p class="selection-guide">疑似トークン: {operationKeyLabel('pseudo.commit')} で確定 / {operationKeyLabel('editor.cancel')}・入力欄から離れると取消（再編集は空文字で削除。関連する下線も削除されます）</p>
+        <p class="selection-guide">疑似トークン: {keyLabel('pseudo.commit')} で確定 / {keyLabel('editor.cancel')}・入力欄から離れると取消（再編集は空文字で削除。関連する下線も削除されます）</p>
       {:else if mode === 'MARKER_INPUT'}
-        <p class="selection-guide">標識の自由入力: {operationKeyLabel('marker.customCommit')} で確定 / {operationKeyLabel('editor.cancel')}・入力欄から離れると取消（空文字で削除）</p>
+        <p class="selection-guide">標識の自由入力: {keyLabel('marker.customCommit')} で確定 / {keyLabel('editor.cancel')}・入力欄から離れると取消（空文字で削除）</p>
       {:else if mode === 'FORM'}
-        <p class="selection-guide">formモード: {formInputGuide} ・ {operationKeyLabel('form.commit')} / {operationKeyLabel('editor.cancel')} で確定 / 移動キー・{operationKeyLabel('entry.next')}/{operationKeyLabel('entry.previous')} で確定して移動 / {operationKeyLabel('form.clear')} で即時削除 / {operationKeyLabel('form.eraseInput')} で入力を戻す（Dは左右別、T・基礎下線は1つ）</p>
+        <p class="selection-guide">formモード: {formInputGuide} ・ {keyLabel('form.commit')} / {keyLabel('editor.cancel')} で確定 / 移動キー・{keyLabel('entry.next')}/{keyLabel('entry.previous')} で確定して移動 / {keyLabel('form.clear')} で即時削除 / {keyLabel('form.eraseInput')} で入力を戻す（Dは左右別、T・基礎下線は1つ）</p>
       {/if}
     </aside>
   {/if}
@@ -1172,15 +1090,7 @@
       <p class="selection-guide">英文を変更すると、疑似トークン・角括弧・丸括弧・下線・標識・活用表示・分割・矢印はリセットされます。</p>
       <div class="input-row">
         <input bind:value={sentenceDraft} aria-label="英文" use:focusOnMount on:keydown={(event) => {
-          if (!matchesKeyboardInput(event, [
-            { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
-            { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-          ]) && resolveKeyboardOperation(event, [
-            { operation: 'editor.cancel', rules: [
-              { key: 'Escape', ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
-              { key: '[', ctrlKey: true, repeat: null },
-            ] },
-          ]) === 'editor.cancel') { event.preventDefault(); event.stopPropagation(); enterNormal(); }
+          if (resolveInput(event, { mode: 'INSERT' }).winner?.operation === 'editor.cancel') { event.preventDefault(); event.stopPropagation(); enterNormal(); }
         }} />
         <button type="button" on:click={enterNormal}>完了</button>
       </div>
@@ -1400,28 +1310,17 @@
           on:keydown={(event) => {
             if (mode !== 'TRANSLATION') return;
             translationActivity();
-            const translationOperation = resolveKeyboardOperation(event, [
-              { operation: 'translation.blockTab', rules: [
-                { key: 'Tab', ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-              ] },
-              { operation: 'editor.cancel', rules: [
-                { key: ['Escape', 'Enter'], ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
-                { key: '[', ctrlKey: true, repeat: null },
-              ] },
-            ]);
-            if (translationOperation === 'translation.blockTab') {
-              event.preventDefault();
-              event.stopPropagation();
+            const translationOperation = resolveKeydown(event).winner?.operation;
+            if (isComposingInput(event)) {
+              if (matchesKeyboardInput(event, [{ key: 'Tab', ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null }])) {
+                event.preventDefault(); event.stopPropagation();
+              }
               return;
             }
-            if (matchesKeyboardInput(event, [
-              { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
-              { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-            ])) return;
-            if (translationOperation === 'editor.cancel') {
-              event.preventDefault();
-              event.stopPropagation();
-              enterNormal();
+            if (translationOperation === 'editor.cancel' || translationOperation === 'translation.commit') {
+              event.preventDefault(); event.stopPropagation(); enterNormal();
+            } else if (!translationOperation && matchesKeyboardInput(event, [{ key: 'Tab', ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null }])) {
+              event.preventDefault(); event.stopPropagation();
             }
           }}></textarea>
         {#if mode === 'TRANSLATION'}

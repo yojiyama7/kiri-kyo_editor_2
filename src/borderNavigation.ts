@@ -1,6 +1,7 @@
+import { resolveInput } from './keybindings.ts';
 import { nearestCursor, tokenIndexAt, type Cursor, type DiagramLayout } from './layout.ts';
 import type { KeyboardInput } from './keyboard.ts';
-import { resolveKeyboardOperation } from './keyboardOperations.ts';
+import { type KeyboardOperationId } from './keyboardOperations.ts';
 
 // Borders index the complete token sequence (real, pseudo, and brackets),
 // never the logical atoms introduced by slot splits.
@@ -13,21 +14,12 @@ export function borderFromCursor(layout: DiagramLayout, cursor: Cursor): number 
 }
 
 export function moveBorder(index: number, tokenCount: number, input: KeyboardInput): number {
+  const operation = resolveInput(input, { mode: 'BORDER' }).winner?.operation as KeyboardOperationId | undefined;
+  return moveBorderOperation(index, tokenCount, operation);
+}
+
+export function moveBorderOperation(index: number, tokenCount: number, operation: KeyboardOperationId | undefined): number {
   const current = clampBorder(index, tokenCount);
-  const operation = resolveKeyboardOperation(input, [
-    { operation: 'cursor.left', rules: [
-      { key: ['h', 'ArrowLeft'], ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-    ] },
-    { operation: 'cursor.right', rules: [
-      { key: ['l', 'ArrowRight'], ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-    ] },
-    { operation: 'cursor.rowStart', rules: [
-      { key: '0', ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-    ] },
-    { operation: 'cursor.rowEnd', rules: [
-      { key: '$', ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-    ] },
-  ]);
   if (operation === 'cursor.left') return clampBorder(current - 1, tokenCount);
   if (operation === 'cursor.right') return clampBorder(current + 1, tokenCount);
   if (operation === 'cursor.rowStart') return 0;

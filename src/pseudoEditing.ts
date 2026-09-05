@@ -1,5 +1,6 @@
+import { resolveInput, isComposingInput, isRepeatedInput } from './keybindings.ts';
 import { matchesKeyboardInput, type KeyboardInput } from './keyboard.ts';
-import { resolveKeyboardOperation, type KeyboardOperationId } from './keyboardOperations.ts';
+import { type KeyboardOperationId } from './keyboardOperations.ts';
 import { isSavedState, type PseudoToken, type SavedState, type Token } from './model.ts';
 import { removeSlotsAndDependents } from './structureDeletion.ts';
 import type { EditorSnapshot } from './history.ts';
@@ -74,19 +75,7 @@ export function editPseudoToken(document: SavedState, tokenId: string, text: str
 type InputKey = KeyboardInput;
 export function pseudoInputAction(event: InputKey, composing: boolean):
   Extract<KeyboardOperationId, 'pseudo.commit' | 'editor.cancel'> | undefined {
-  const ctrlBracket = matchesKeyboardInput(event, [{ key: '[', ctrlKey: true }]);
-  if (composing || matchesKeyboardInput(event, [
-    { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
-    { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-    { metaKey: true, ctrlKey: null, altKey: null, shiftKey: null, repeat: null, isComposing: null },
-    { altKey: true, ctrlKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-    { shiftKey: true, ctrlKey: null, altKey: null, metaKey: null, repeat: null, isComposing: null },
-    { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
-  ]) || (matchesKeyboardInput(event, [
-    { ctrlKey: true, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-  ]) && !ctrlBracket)) return;
-  return resolveKeyboardOperation(event, [
-    { operation: 'pseudo.commit', rules: [{ key: 'Enter' }] },
-    { operation: 'editor.cancel', rules: [{ key: 'Escape' }, { key: '[', ctrlKey: true }] },
-  ]);
+  if (composing || isComposingInput(event) || isRepeatedInput(event)) return;
+  const operation = resolveInput(event, { mode: 'PSEUDO_INPUT' }).winner?.operation;
+  return operation === 'pseudo.commit' || operation === 'editor.cancel' ? operation : undefined;
 }

@@ -1,13 +1,13 @@
 <script lang="ts">
+  import KeybindingSettings from './KeybindingSettings.svelte';
+  import { loadSettings, getSettings, subscribeSettings, resolveInput, sequenceBindings, operationMatches, type BindingSettings } from './keybindings';
   import { matchesKeyboardInput } from './keyboard';
-  import { resolveKeyboardOperation } from './keyboardOperations';
   import { onMount, onDestroy, tick } from 'svelte';
   import EntryEditor from './EntryEditor.svelte';
   import { createExampleDocument } from './example';
   import { EditHistory, type EditorSnapshot } from './history';
   import { markerLabel, type MarkerId } from './markers';
-  import { DEFAULT_MARKER_INPUT_BINDINGS, operationKeyLabel } from './inputConfig';
-  import { entryShortcut } from './entryShortcuts';
+  import { operationKeyLabel } from './inputConfig';
   import { createEditorUpdates } from './editorUpdates';
   import { createEntryPersistence, LEGACY_STORAGE_KEY, RECOVERY_PREFIX, type PersistenceStatus } from './entryPersistence';
   import { createPersistenceClient } from './persistenceClient';
@@ -15,6 +15,15 @@
     createEntry, insertEntry, insertEnglishEntries, parseEnglishLines, removeEntry, reorderEntry, withEntrySnapshot,
     type Entry, type EntryDocument, type DocumentSnapshot, type EntryEditorState, type EntryEditorHandle,
   } from './entryDocument';
+
+  let settingsOpen = false;
+  let settingsError: string | undefined;
+  let bindingSettings: BindingSettings = getSettings();
+  const unsubscribeBindings = subscribeSettings(value => { bindingSettings = value; });
+  onDestroy(unsubscribeBindings);
+  $: markerBindings = sequenceBindings<MarkerId>('marker', bindingSettings);
+  $: keyLabel = (operation: import('./keyboardOperations').KeyboardOperationId, separator = ' / ') => { bindingSettings; return operationKeyLabel(operation, separator); };
+  function openSettings() { finishEditing(); closeEntryMenu(false); settingsOpen = true; }
 
   const storageKey = 'IndexedDB: kiri-kyo-editor';
   let entries: Entry[] = [createEntry(createExampleDocument())];
@@ -62,7 +71,11 @@
     client.dispose();
   });
 
-  onMount(() => { void initialize(); });
+  onMount(() => {
+    try { settingsError = loadSettings(localStorage); }
+    catch (error) { settingsError = `キーバインド設定を読み込めませんでした。初期値を使用します: ${String(error)}`; }
+    void initialize();
+  });
 
   async function initialize() {
     if (loading || destroyed) return;
@@ -226,26 +239,10 @@
       { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
       { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
     ])) {
-      if (resolveKeyboardOperation(event, [
-        { operation: 'dialog.cancel', rules: [
-        { key: 'Escape', ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-        { key: '[', ctrlKey: true, repeat: null, isComposing: null },
-        ] },
-      ]) === 'dialog.cancel') event.preventDefault();
+      if (operationMatches({ ...event, key: event.key, code: event.code, ctrlKey: event.ctrlKey, altKey: event.altKey, metaKey: event.metaKey, shiftKey: event.shiftKey, isComposing: false, keyCode: 0 }, 'dialog.cancel')) event.preventDefault();
       return;
     }
-    const operation = resolveKeyboardOperation(event, [
-      { operation: 'dialog.cancel', rules: [
-        { key: 'Escape', ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
-        { key: '[', ctrlKey: true, repeat: null },
-      ] },
-      { operation: 'focus.previous', rules: [
-        { key: 'Tab', ctrlKey: null, altKey: null, metaKey: null, shiftKey: true, repeat: null },
-      ] },
-      { operation: 'focus.next', rules: [
-        { key: 'Tab', ctrlKey: null, altKey: null, metaKey: null, repeat: null },
-      ] },
-    ]);
+    const operation = resolveInput(event, { mode: 'DIALOG' }).winner?.operation;
     if (operation === 'dialog.cancel') {
       event.preventDefault();
       event.stopPropagation();
@@ -254,15 +251,10 @@
     }
     if (operation !== 'focus.next' && operation !== 'focus.previous') return;
     const controls = bulkDialog.querySelectorAll<HTMLElement>('textarea, button:not(:disabled)');
-    const first = controls[0];
-    const last = controls[controls.length - 1];
-    if (operation === 'focus.previous' && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (operation === 'focus.next' && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    const index = Array.from(controls).indexOf(document.activeElement as HTMLElement);
+    const direction = operation === 'focus.previous' ? -1 : 1;
+    event.preventDefault();
+    controls[(index + direction + controls.length) % controls.length]?.focus();
   }
 
   async function addBulkEntries() {
@@ -363,14 +355,8 @@
   }
 
   function handleEntryMenuKeydown(event: KeyboardEvent) {
-    const operation = resolveKeyboardOperation(event, [
-      { operation: 'editor.cancel', rules: [{ key: 'Escape', repeat: null }] },
-      { operation: 'cursor.down', rules: [{ key: 'ArrowDown', repeat: null }] },
-      { operation: 'cursor.up', rules: [{ key: 'ArrowUp', repeat: null }] },
-      { operation: 'cursor.rowStart', rules: [{ key: 'Home', repeat: null }] },
-      { operation: 'cursor.rowEnd', rules: [{ key: 'End', repeat: null }] },
-    ]);
-    if (operation === 'editor.cancel' && openEntryMenuId) {
+    const operation = resolveInput(event, { mode: 'MENU' }).winner?.operation;
+    if (operation === 'dialog.cancel' && openEntryMenuId) {
       event.preventDefault();
       closeEntryMenu();
       return;
@@ -388,6 +374,7 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if (settingsOpen) return;
     if (event.target instanceof Element && event.target.closest('.entry-menu')) {
       if (openEntryMenuId) { handleEntryMenuKeydown(event); return; }
       if (matchesKeyboardInput(event, [{ key: ['Enter', ' ', 'Tab'], ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null }])) return;
@@ -404,7 +391,9 @@
       ])) return;
     const editor = currentEditor();
     if (!editor) return;
-    const shortcut = entryShortcut(event, editor.getInputMode());
+    const resolved = editor.resolveKeydown(event);
+    const candidate = resolved.winner?.operation;
+    const shortcut = candidate === 'entry.next' || candidate === 'entry.previous' || candidate === 'entry.reorderDown' || candidate === 'entry.reorderUp' ? candidate : undefined;
     if (shortcut) {
       event.preventDefault();
       if (matchesKeyboardInput(event, [
@@ -415,7 +404,7 @@
       else swapEntry(activeEntryId, shortcut === 'entry.reorderDown' ? 1 : -1);
       return;
     }
-    editor.handleKeydown(event);
+    editor.handleKeydown(event, resolved);
   }
 
   function finishMarkerInput() { currentEditor()?.finishMarkerInput(); }
@@ -494,39 +483,45 @@
 
 <svelte:head><title>Kiri-kyo Editor — 英文構造図</title></svelte:head>
 
+{#if settingsOpen}
+  <KeybindingSettings onclose={() => { settingsOpen = false; }} onsaved={() => { settingsError = undefined; settingsOpen = false; }} />
+{/if}
+
 <main class="shell">
   <header class="topbar">
     <h1>英文構造図エディタ</h1>
+    <button type="button" on:click={openSettings}>キーバインド設定</button>
     <div class="mode">{entries.findIndex((entry) => entry.id === activeEntryId) + 1} / {entries.length} · {activeState?.mode ?? 'NORMAL'}</div>
   </header>
 
+  {#if settingsError}<p role="alert">{settingsError}</p>{/if}
   <section class="guide" aria-label="キーボード操作ガイド">
-    <span><kbd>{operationKeyLabel('entry.next')}</kbd> 次の組</span><span><kbd>{operationKeyLabel('entry.previous')}</kbd> 前の組</span>
-    <span><kbd>{operationKeyLabel('entry.reorderDown')}</kbd> 下へ入れ替え</span><span><kbd>{operationKeyLabel('entry.reorderUp')}</kbd> 上へ入れ替え</span>
-    <span><kbd>{operationKeyLabel('english.start')}</kbd> 英文入力</span><span><kbd>{operationKeyLabel('translation.start')}</kbd> 訳文入力</span>
-    <span><kbd>{operationKeyLabel('form.start')}</kbd> formモード（活用表示）</span>
-    <span><kbd>{operationKeyLabel('border.start')}</kbd> 境目モード（<kbd>{operationKeyLabel('cursor.left')}</kbd>/<kbd>{operationKeyLabel('cursor.right')}</kbd>で移動、<kbd>{operationKeyLabel('cursor.rowStart')}</kbd>/<kbd>{operationKeyLabel('cursor.rowEnd')}</kbd>で文頭・文末）</span>
-    <span>境目で <kbd>{operationKeyLabel('pseudo.start')}</kbd> 疑似トークン作成、<kbd>{operationKeyLabel('bracket.insertSquareOpen')}</kbd>/<kbd>{operationKeyLabel('bracket.insertSquareClose')}</kbd> 角括弧追加、<kbd>{operationKeyLabel('bracket.insertRoundOpen')}</kbd>/<kbd>{operationKeyLabel('bracket.insertRoundClose')}</kbd> 丸括弧追加、<kbd>{operationKeyLabel('bracket.insertAngleOpen')}</kbd>/<kbd>{operationKeyLabel('bracket.insertAngleClose')}</kbd> 山括弧追加、<kbd>{operationKeyLabel('bracket.deleteBefore')}</kbd>/<kbd>{operationKeyLabel('bracket.deleteAfter')}</kbd> 隣の括弧・疑似トークン削除</span>
-    <span>疑似スロットで <kbd>{operationKeyLabel('english.start')}</kbd> 再編集（空文字で削除）</span>
-    <span>normalで <kbd>{operationKeyLabel('bracket.insertSquareOpen')}</kbd>/<kbd>{operationKeyLabel('bracket.insertSquareClose')}</kbd>、<kbd>{operationKeyLabel('bracket.insertRoundOpen')}</kbd>/<kbd>{operationKeyLabel('bracket.insertRoundClose')}</kbd>、<kbd>{operationKeyLabel('bracket.insertAngleOpen')}</kbd>/<kbd>{operationKeyLabel('bracket.insertAngleClose')}</kbd> 現在のregionの左／右に括弧追加（元のスロットに留まる・丸括弧はスロットなし）</span>
-    <span><kbd>{operationKeyLabel('bracket.insertSquareOpen')}</kbd> のスロットは標識・矢印に対応（T/D不可、含めた下線は複合下線）</span>
-    <span><kbd>{operationKeyLabel('bracket.insertRoundOpen')}</kbd>/<kbd>{operationKeyLabel('bracket.insertAngleOpen')}</kbd> は全体を選択・標識入力不可、ad系統の修飾矢印の始点／終点に対応（T/D不可、下線作成時は選択していても除外）。<kbd>{operationKeyLabel('bracket.insertRoundClose')}</kbd>/<kbd>{operationKeyLabel('bracket.insertAngleClose')}</kbd> は選択なし</span>
-    <span><kbd>{operationKeyLabel('cursor.left')}</kbd><kbd>{operationKeyLabel('cursor.right')}</kbd> 移動</span><span><kbd>{operationKeyLabel('cursor.down')}</kbd><kbd>{operationKeyLabel('cursor.up')}</kbd> 下線間を移動</span>
-    <span><kbd>{operationKeyLabel('cursor.up')}</kbd> 基礎下線の内部へ（T・D分割中は不可）</span>
-    <span><kbd>{operationKeyLabel('cursor.rowStart')}</kbd><kbd>{operationKeyLabel('cursor.rowEnd')}</kbd> 行頭・行末</span>
-    <span><kbd>{operationKeyLabel('selection.toggle')}</kbd> 範囲選択</span><span><kbd>{operationKeyLabel('selection.toggle', '')}{operationKeyLabel('selection.toggle', '')}</kbd> 個別選択（<kbd>{operationKeyLabel('selection.toggle')}</kbd>で追加・解除）</span>
-    <span><kbd>{operationKeyLabel('selection.commit')}</kbd> 下線作成</span><span><kbd>{operationKeyLabel('split.t')}</kbd> T化</span><span><kbd>{operationKeyLabel('split.d')}</kbd> 2分割（連続領域・再分割不可）</span>
-    <span><kbd>{operationKeyLabel('arrow.start')}</kbd> 矢印作成・付け替え（{appositionMarkerLabels} は同格）→ 相手で <kbd>{operationKeyLabel('arrow.commit')}</kbd></span>
-    <span><kbd>{operationKeyLabel('arrow.delete')}</kbd> 矢印削除（同格は両端で可）</span>
-    <span><kbd>{operationKeyLabel('structure.delete')}</kbd> 下線削除・T/D分割解除</span><span><kbd>{operationKeyLabel('marker.clear')}</kbd> 標識削除</span>
-    <span>Normalで <kbd>{operationKeyLabel('marker.customStart')}</kbd> 標識を自由入力</span>
-    <span><kbd>{operationKeyLabel('history.undo')}</kbd> 元に戻す</span><span><kbd>{operationKeyLabel('history.redo')}</kbd> やり直す</span><span><kbd>{operationKeyLabel('editor.cancel')}</kbd> Normal</span>
+    <span><kbd>{keyLabel('entry.next')}</kbd> 次の組</span><span><kbd>{keyLabel('entry.previous')}</kbd> 前の組</span>
+    <span><kbd>{keyLabel('entry.reorderDown')}</kbd> 下へ入れ替え</span><span><kbd>{keyLabel('entry.reorderUp')}</kbd> 上へ入れ替え</span>
+    <span><kbd>{keyLabel('english.start')}</kbd> 英文入力</span><span><kbd>{keyLabel('translation.start')}</kbd> 訳文入力</span>
+    <span><kbd>{keyLabel('form.start')}</kbd> formモード（活用表示）</span>
+    <span><kbd>{keyLabel('border.start')}</kbd> 境目モード（<kbd>{keyLabel('cursor.left')}</kbd>/<kbd>{keyLabel('cursor.right')}</kbd>で移動、<kbd>{keyLabel('cursor.rowStart')}</kbd>/<kbd>{keyLabel('cursor.rowEnd')}</kbd>で文頭・文末）</span>
+    <span>境目で <kbd>{keyLabel('pseudo.start')}</kbd> 疑似トークン作成、<kbd>{keyLabel('bracket.insertSquareOpen')}</kbd>/<kbd>{keyLabel('bracket.insertSquareClose')}</kbd> 角括弧追加、<kbd>{keyLabel('bracket.insertRoundOpen')}</kbd>/<kbd>{keyLabel('bracket.insertRoundClose')}</kbd> 丸括弧追加、<kbd>{keyLabel('bracket.insertAngleOpen')}</kbd>/<kbd>{keyLabel('bracket.insertAngleClose')}</kbd> 山括弧追加、<kbd>{keyLabel('bracket.deleteBefore')}</kbd>/<kbd>{keyLabel('bracket.deleteAfter')}</kbd> 隣の括弧・疑似トークン削除</span>
+    <span>疑似スロットで <kbd>{keyLabel('english.start')}</kbd> 再編集（空文字で削除）</span>
+    <span>normalで <kbd>{keyLabel('bracket.insertSquareOpen')}</kbd>/<kbd>{keyLabel('bracket.insertSquareClose')}</kbd>、<kbd>{keyLabel('bracket.insertRoundOpen')}</kbd>/<kbd>{keyLabel('bracket.insertRoundClose')}</kbd>、<kbd>{keyLabel('bracket.insertAngleOpen')}</kbd>/<kbd>{keyLabel('bracket.insertAngleClose')}</kbd> 現在のregionの左／右に括弧追加（元のスロットに留まる・丸括弧はスロットなし）</span>
+    <span><kbd>{keyLabel('bracket.insertSquareOpen')}</kbd> のスロットは標識・矢印に対応（T/D不可、含めた下線は複合下線）</span>
+    <span><kbd>{keyLabel('bracket.insertRoundOpen')}</kbd>/<kbd>{keyLabel('bracket.insertAngleOpen')}</kbd> は全体を選択・標識入力不可、ad系統の修飾矢印の始点／終点に対応（T/D不可、下線作成時は選択していても除外）。<kbd>{keyLabel('bracket.insertRoundClose')}</kbd>/<kbd>{keyLabel('bracket.insertAngleClose')}</kbd> は選択なし</span>
+    <span><kbd>{keyLabel('cursor.left')}</kbd><kbd>{keyLabel('cursor.right')}</kbd> 移動</span><span><kbd>{keyLabel('cursor.down')}</kbd><kbd>{keyLabel('cursor.up')}</kbd> 下線間を移動</span>
+    <span><kbd>{keyLabel('cursor.up')}</kbd> 基礎下線の内部へ（T・D分割中は不可）</span>
+    <span><kbd>{keyLabel('cursor.rowStart')}</kbd><kbd>{keyLabel('cursor.rowEnd')}</kbd> 行頭・行末</span>
+    <span><kbd>{keyLabel('selection.toggle')}</kbd> 範囲選択</span><span><kbd>{keyLabel('selection.toggle')} を2回</kbd> 個別選択（<kbd>{keyLabel('selection.toggle')}</kbd>で追加・解除）</span>
+    <span><kbd>{keyLabel('selection.commit')}</kbd> 下線作成</span><span><kbd>{keyLabel('split.t')}</kbd> T化</span><span><kbd>{keyLabel('split.d')}</kbd> 2分割（連続領域・再分割不可）</span>
+    <span><kbd>{keyLabel('arrow.start')}</kbd> 矢印作成・付け替え（{appositionMarkerLabels} は同格）→ 相手で <kbd>{keyLabel('arrow.commit')}</kbd></span>
+    <span><kbd>{keyLabel('arrow.delete')}</kbd> 矢印削除（同格は両端で可）</span>
+    <span><kbd>{keyLabel('structure.delete')}</kbd> 下線削除・T/D分割解除</span><span><kbd>{keyLabel('marker.clear')}</kbd> 標識削除</span>
+    <span>Normalで <kbd>{keyLabel('marker.customStart')}</kbd> 標識を自由入力</span>
+    <span><kbd>{keyLabel('history.undo')}</kbd> 元に戻す</span><span><kbd>{keyLabel('history.redo')}</kbd> やり直す</span><span><kbd>{keyLabel('editor.cancel')}</kbd> Normal</span>
   </section>
 
   <details class="marker-guide" on:toggle={finishMarkerInput}>
     <summary>標識の入力（Normal モード）</summary>
-    <div class="marker-bindings">{#each DEFAULT_MARKER_INPUT_BINDINGS as binding}<span><kbd>{binding.sequence}</kbd> → {markerLabel(binding.value)}</span>{/each}</div>
-    <p>続けて入力すると標識を更新します。移動・{operationKeyLabel('editor.cancel')} で区切り、{operationKeyLabel('marker.clear')} で削除します。</p>
+    <div class="marker-bindings">{#each markerBindings as binding}<span><kbd>{binding.sequence}</kbd> → {markerLabel(binding.value)}</span>{/each}</div>
+    <p>続けて入力すると標識を更新します。移動・{keyLabel('editor.cancel')} で区切り、{keyLabel('marker.clear')} で削除します。</p>
   </details>
 
   {#if ready}
@@ -552,7 +547,7 @@
               </div>
             {/if}
           </div>
-          <EntryEditor bind:this={editors[entry.id]} initial={entry.document} active={activeEntryId === entry.id}
+          <EntryEditor {bindingSettings} bind:this={editors[entry.id]} initial={entry.document} active={activeEntryId === entry.id}
             ontranslationactivity={translationActivity}
             onactivate={() => activate(entry.id)} onundo={(redo) => void undo(redo)}
             onrecord={(before, after) => recordEntry(entry.id, before, after)}

@@ -1,3 +1,4 @@
+import { bindingLabel, getSettings } from './keybindings.ts';
 import type { FormId, MarkerId } from './inputIds.ts';
 import type { KeyboardOperationId } from './keyboardOperations.ts';
 
@@ -46,12 +47,12 @@ export const DEFAULT_FORM_INPUT_BINDINGS = [
   { sequence: 'ing', value: 'form.ing' },
 ] as const satisfies readonly InputSequenceBinding<FormId>[];
 
-const DEFAULT_OPERATION_KEY_LABELS: Partial<Record<KeyboardOperationId, readonly string[]>> = {
+export const DEFAULT_OPERATION_KEY_LABELS: Partial<Record<KeyboardOperationId, readonly string[]>> = {
   'entry.next': ['Ctrl+n'], 'entry.previous': ['Ctrl+p'],
   'entry.reorderDown': ['Alt+j'], 'entry.reorderUp': ['Alt+k'],
   'editor.cancel': ['Esc', 'Ctrl+['], 'history.undo': ['u'], 'history.redo': ['Ctrl+r'],
-  'cursor.left': ['h', '←'], 'cursor.right': ['l', '→'], 'cursor.down': ['j'], 'cursor.up': ['k'],
-  'cursor.rowStart': ['0'], 'cursor.rowEnd': ['$'],
+  'cursor.left': ['h', '←'], 'cursor.right': ['l', '→'], 'cursor.down': ['j', '↓'], 'cursor.up': ['k', '↑'],
+  'cursor.rowStart': ['0', 'Home'], 'cursor.rowEnd': ['$', 'End'],
   'form.start': ['f'], 'form.clear': ['x'], 'form.commit': ['Enter'], 'form.eraseInput': ['Backspace'],
   'border.start': ['b'], 'pseudo.start': ['/'], 'pseudo.commit': ['Enter'],
   'marker.customStart': ['/'], 'marker.customCommit': ['Enter'],
@@ -64,13 +65,13 @@ const DEFAULT_OPERATION_KEY_LABELS: Partial<Record<KeyboardOperationId, readonly
   'selection.toggle': ['v'], 'selection.commit': ['Enter'],
   'english.start': ['i'], 'translation.start': ['Tab'], 'structure.delete': ['X'],
   'dialog.cancel': ['Esc', 'Ctrl+['], 'focus.next': ['Tab'], 'focus.previous': ['Shift+Tab'],
-  'translation.blockTab': ['Tab'],
+  'translation.blockTab': ['Tab'], 'translation.commit': ['Enter'],
 };
 
 export function operationKeyLabels(operation: KeyboardOperationId): readonly string[] {
-  return DEFAULT_OPERATION_KEY_LABELS[operation] ?? [];
+  return operation === 'translation.blockTab' ? ['Tab'] : getSettings().bindings[operation].map(bindingLabel);
 }
 
 export function operationKeyLabel(operation: KeyboardOperationId, separator = ' / '): string {
-  return operationKeyLabels(operation).join(separator);
+  return operationKeyLabels(operation).join(separator) || '未割り当て';
 }

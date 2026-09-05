@@ -1,8 +1,8 @@
+import { sequenceBindings, compareOperations, resolveInput } from './keybindings.ts';
 import { FORM_LABELS, isBasicToken, isFormId, type FormId, type SavedState } from './model.ts';
 import type { EditorSnapshot } from './history.ts';
-import { DEFAULT_FORM_INPUT_BINDINGS, type InputSequenceBinding } from './inputConfig.ts';
+import { type InputSequenceBinding } from './inputConfig.ts';
 import { matchesKeyboardInput, type KeyboardInput } from './keyboard.ts';
-import { resolveKeyboardOperation } from './keyboardOperations.ts';
 
 export type FormSession = { slotId: string; tokenId?: string; before: EditorSnapshot; buffer: string };
 export type FormTarget = { slotId: string; ownerSlotId: string; tokenId?: string; label: string; form?: FormId };
@@ -89,16 +89,14 @@ export function setTokenForm(document: SavedState, tokenId: string, form?: FormI
 
 // No timeout: p stays editable until Enter so a second p can select p.p.
 export function formIdForInput(buffer: string,
-  bindings: readonly InputSequenceBinding<FormId>[] = DEFAULT_FORM_INPUT_BINDINGS): FormId | undefined {
-  return bindings.find(binding => binding.sequence === buffer)?.value;
+  bindings: readonly InputSequenceBinding<FormId>[] = sequenceBindings<FormId>('form')): FormId | undefined {
+  return bindings.filter(binding => binding.sequence === buffer).map(binding => binding.value).sort(compareOperations)[0];
 }
 
 export function nextFormInput(buffer: string, input: KeyboardInput,
-  bindings: readonly InputSequenceBinding<FormId>[] = DEFAULT_FORM_INPUT_BINDINGS): { buffer: string; form?: FormId } {
-  if (resolveKeyboardOperation(input, [
-    { operation: 'form.eraseInput', rules: [{ key: 'Backspace' }] },
-  ]) === 'form.eraseInput') {
-    const next = buffer.slice(0, -1);
+  bindings: readonly InputSequenceBinding<FormId>[] = sequenceBindings<FormId>('form')): { buffer: string; form?: FormId } {
+  if (!input.repeat && resolveInput(input, { mode: 'FORM', buffer }).winner?.operation === 'form.eraseInput') {
+    const next = [...buffer].slice(0, -1).join('');
     return { buffer: next, form: formIdForInput(next, bindings) };
   }
   if (!matchesKeyboardInput(input, [{ keyLength: 1 }])) return { buffer, form: formIdForInput(buffer, bindings) };
@@ -109,7 +107,7 @@ export function nextFormInput(buffer: string, input: KeyboardInput,
 }
 
 export function nextFormBuffer(buffer: string, input: KeyboardInput,
-  bindings: readonly InputSequenceBinding<FormId>[] = DEFAULT_FORM_INPUT_BINDINGS): string {
+  bindings: readonly InputSequenceBinding<FormId>[] = sequenceBindings<FormId>('form')): string {
   return nextFormInput(buffer, input, bindings).buffer;
 }
 

@@ -53,7 +53,7 @@ test('keyboard bindings resolve stable operation IDs independently from their ke
   assert.equal(isKeyboardOperationId(1), false);
 });
 
-test('the first matching binding defines deterministic operation precedence', () => {
+test('matching bindings follow the fixed operation order', () => {
   assert.equal(resolveKeyboardOperation({ key: 'Enter' }, [
     { operation: 'arrow.commit', rules: [{ key: 'Enter' }] },
     { operation: 'selection.commit', rules: [{ key: 'Enter' }] },
