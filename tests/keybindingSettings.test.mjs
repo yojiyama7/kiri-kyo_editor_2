@@ -39,12 +39,15 @@ test('settings renders three editable slots without fixed Esc or add/remove butt
   assert.ok(html.includes('固定優先順位順の操作'));
   assert.ok(html.includes('前提モード'));
   assert.ok(html.includes('通常編集（N）'));
+  assert.ok(html.includes('aria-label="モードアイコンの説明"'));
+  assert.ok(html.includes('id="mode-icon-key" role="tooltip"'));
+  assert.equal((html.match(/aria-hidden="true"/g) ?? []).length, 13);
   assert.ok(html.includes('role="table"'));
   assert.ok(html.includes('キーバインド1'));
   assert.ok(html.includes('キーバインド2'));
   assert.ok(html.includes('キーバインド3'));
   assert.match(source, /\.binding-header, \.binding-row \{[^}]*grid-template-columns: minmax\(185px, 1fr\) 28px repeat\(3, 118px\) max-content/s);
-  assert.equal(html.match(/role="tooltip"/g)?.length, SETTINGS_OPERATIONS.length);
+  assert.equal(html.match(/role="tooltip"/g)?.length, SETTINGS_OPERATIONS.length + 1);
   assert.equal(html.match(/aria-haspopup="dialog"/g)?.length, SETTINGS_OPERATIONS.length);
   assert.ok(source.includes('<h3>何をする操作か</h3>'));
   assert.ok(source.includes('<h3>利用可能なモード</h3>'));

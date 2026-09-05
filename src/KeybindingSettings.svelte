@@ -123,6 +123,17 @@
             <option value={mode}>{MODE_HELP[mode]}（{MODE_ABBREVIATIONS[mode]}）</option>
           {/each}
         </select>
+        <div class="mode-filter-help">
+          <button type="button" class="help-button" aria-label="モードアイコンの説明" aria-describedby="mode-icon-key">?</button>
+          <div class="mode-icon-key" id="mode-icon-key" role="tooltip">
+            <strong>モードアイコン</strong>
+            <ul>
+              {#each INPUT_MODES as mode}
+                <li><span class="mode-icon" aria-hidden="true">{MODE_ABBREVIATIONS[mode]}</span><span>{MODE_HELP[mode]}</span></li>
+              {/each}
+            </ul>
+          </div>
+        </div>
       </div>
       <div class="binding-list" role="table" aria-label="固定優先順位順の操作">
         <div class="binding-header" role="row">
@@ -243,6 +254,11 @@
   .binding-filter { display: flex; flex: none; gap: 10px; align-items: center; padding: 10px 16px; border-bottom: 1px solid #bbb; background: #f7f7f7; }
   .binding-filter label { font-size: .85rem; font-weight: 600; }
   .binding-filter select { min-width: 170px; padding: 6px 28px 6px 8px; border: 1px solid #aaa; border-radius: 4px; background: white; }
+  .mode-filter-help { position: relative; z-index: 3; display: flex; }
+  .mode-icon-key { box-sizing: border-box; position: absolute; top: calc(100% + 7px); right: 0; width: min(300px, 80vw); padding: 10px 12px; border: 1px solid #777; border-radius: 5px; background: #222; color: white; font-size: .75rem; line-height: 1.45; box-shadow: 0 3px 10px #0004; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s; }
+  .mode-icon-key ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin: 8px 0 0; padding: 0; list-style: none; }
+  .mode-icon-key li { display: flex; gap: 6px; align-items: center; }
+  .mode-filter-help:hover .mode-icon-key, .mode-filter-help:focus-within .mode-icon-key { opacity: 1; visibility: visible; }
   .binding-list { min-width: 0; min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
   .binding-header, .binding-row { display: grid; grid-template-columns: minmax(185px, 1fr) 28px repeat(3, 118px) max-content; gap: 8px; align-items: center; min-width: 680px; padding: 10px 16px; }
   .binding-header { position: sticky; top: 0; z-index: 1; border-bottom: 1px solid #bbb; background: #eee; color: #555; font-size: .75rem; font-weight: 600; }
