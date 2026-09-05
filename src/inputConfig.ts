@@ -47,6 +47,10 @@ export const DEFAULT_FORM_INPUT_BINDINGS = [
   { sequence: 'ing', value: 'form.ing' },
 ] as const satisfies readonly InputSequenceBinding<FormId>[];
 
+// These operations keep their defaults and stay out of the settings UI.
+// Removing an ID here makes that operation configurable again with its default intact.
+export const FIXED_OPERATION_IDS = ['focus.next', 'focus.previous'] as const satisfies readonly KeyboardOperationId[];
+
 export const DEFAULT_OPERATION_KEY_LABELS: Partial<Record<KeyboardOperationId, readonly string[]>> = {
   'entry.next': ['Ctrl+n'], 'entry.previous': ['Ctrl+p'],
   'entry.reorderDown': ['Alt+j'], 'entry.reorderUp': ['Alt+k'],

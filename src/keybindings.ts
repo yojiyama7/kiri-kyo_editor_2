@@ -1,7 +1,7 @@
 import type { KeyboardInput } from './keyboard.ts';
 import { KEYBOARD_OPERATION_IDS, type KeyboardOperationId } from './operationIds.ts';
 import { MARKER_LABELS, FORM_LABELS, type MarkerId, type FormId } from './inputIds.ts';
-import { DEFAULT_MARKER_INPUT_BINDINGS, DEFAULT_FORM_INPUT_BINDINGS, DEFAULT_OPERATION_KEY_LABELS } from './inputConfig.ts';
+import { DEFAULT_MARKER_INPUT_BINDINGS, DEFAULT_FORM_INPUT_BINDINGS, DEFAULT_OPERATION_KEY_LABELS, FIXED_OPERATION_IDS } from './inputConfig.ts';
 
 export type OperationId = Exclude<KeyboardOperationId, 'translation.blockTab'> | MarkerId | FormId;
 export type InputMode = 'NORMAL' | 'VISUAL' | 'VISUAL_MULTI' | 'ARROW' | 'BORDER' | 'FORM'
@@ -50,6 +50,8 @@ add(6, ['NORMAL', 'BORDER'], { 'bracket.insertSquareOpen': '[ を挿入', 'brack
 const compareText = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 export const OPERATIONS = definitions.sort((a, b) => a.category - b.category ||
   (a.category === 3 ? Number(a.id !== 'history.undo') - Number(b.id !== 'history.undo') : compareText(a.id, b.id)));
+const fixedOperationIds = new Set<OperationId>(FIXED_OPERATION_IDS);
+export const SETTINGS_OPERATIONS = OPERATIONS.filter(operation => !fixedOperationIds.has(operation.id));
 const ranks = new Map(OPERATIONS.map((op, index) => [op.id, index]));
 const byId = new Map(OPERATIONS.map(op => [op.id, op]));
 const expected = [...KEYBOARD_OPERATION_IDS.filter(id => id !== 'translation.blockTab'), ...Object.keys(MARKER_LABELS), ...Object.keys(FORM_LABELS)];
@@ -102,6 +104,13 @@ export function defaultSettings(): BindingSettings {
   }
   return { version: 1, bindings };
 }
+function restoreFixedBindings(settings: BindingSettings): BindingSettings {
+  const normalized = structuredClone(settings);
+  for (const id of FIXED_OPERATION_IDS) {
+    normalized.bindings[id] = (DEFAULT_OPERATION_KEY_LABELS[id] ?? []).map(keyFromLabel);
+  }
+  return normalized;
+}
 let active: BindingSettings | undefined;
 const listeners = new Set<(settings: BindingSettings) => void>();
 export function getSettings(): BindingSettings { return active ??= defaultSettings(); }
@@ -111,7 +120,7 @@ export function subscribeSettings(listener: (settings: BindingSettings) => void)
 export function applySettings(settings: BindingSettings): void {
   const errors = validateSettings(settings);
   if (errors.length) throw new Error(errors.join('\n'));
-  active = structuredClone(settings);
+  active = restoreFixedBindings(settings);
   for (const listener of listeners) listener(active);
 }
 export function sequenceBindings<T extends MarkerId | FormId>(kind: 'marker' | 'form', settings = getSettings()): { sequence: string; value: T }[] {
@@ -160,10 +169,11 @@ export function loadSettings(storage: Pick<Storage, 'getItem'>): string | undefi
   } catch (error) { applySettings(defaultSettings()); return `キーバインド設定を読み込めませんでした。保存データを保持して初期値を使用します: ${String(error)}`; }
 }
 export function saveSettings(storage: Pick<Storage, 'setItem'>, settings: BindingSettings): void {
-  const errors = validateSettings(settings);
+  const normalized = restoreFixedBindings(settings);
+  const errors = validateSettings(normalized);
   if (errors.length) throw new Error(errors.join('\n'));
-  storage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  applySettings(settings);
+  storage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
+  applySettings(normalized);
 }
 export type InputContext = { mode: InputMode; buffer?: string };
 export type Candidate = { operation: OperationId; source: 'key' | 'sequence'; buffer?: string; complete?: boolean; hasLonger?: boolean; restarted?: boolean };

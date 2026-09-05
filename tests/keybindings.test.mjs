@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { OPERATIONS, compareOperations, defaultSettings, resolveInput, findConflicts, captureKey,
+import { OPERATIONS, SETTINGS_OPERATIONS, compareOperations, defaultSettings, resolveInput, findConflicts, captureKey,
   validateSettings, bindingLabel, getSettings, applySettings, loadSettings, saveSettings, SETTINGS_STORAGE_KEY,
   subscribeSettings, sequenceBindings } from '../src/keybindings.ts';
-import { operationKeyLabel } from '../src/inputConfig.ts';
+import { DEFAULT_OPERATION_KEY_LABELS, FIXED_OPERATION_IDS, operationKeyLabel } from '../src/inputConfig.ts';
 import { nextMarkerInput } from '../src/markers.ts';
 import { formIdForInput } from '../src/formEditing.ts';
 import { pseudoInputAction } from '../src/pseudoEditing.ts';
@@ -29,6 +29,30 @@ test('every pair of operations has a fixed total order; categories and Undo befo
   const bindings = ['selection.commit', 'arrow.commit'].map(operation => ({ operation, rules: [{ key: 'Enter' }] }));
   assert.equal(resolveKeyboardOperation({ key: 'Enter' }, bindings), 'arrow.commit');
   assert.equal(resolveKeyboardOperation({ key: 'Enter' }, bindings.reverse()), 'arrow.commit');
+});
+
+test('dialog focus movement stays fixed outside the settings UI and is normalized on apply and save', () => {
+  assert.deepEqual(FIXED_OPERATION_IDS, ['focus.next', 'focus.previous']);
+  assert.deepEqual(DEFAULT_OPERATION_KEY_LABELS['focus.next'], ['Tab']);
+  assert.deepEqual(DEFAULT_OPERATION_KEY_LABELS['focus.previous'], ['Shift+Tab']);
+  assert.ok(!SETTINGS_OPERATIONS.some(operation => operation.id === 'focus.next' || operation.id === 'focus.previous'));
+  const settings = defaultSettings();
+  settings.bindings['focus.next'] = [chord('q')];
+  settings.bindings['focus.previous'] = [chord('w')];
+  applySettings(settings);
+  assert.equal(bindingLabel(getSettings().bindings['focus.next'][0]), 'Tab');
+  assert.equal(bindingLabel(getSettings().bindings['focus.previous'][0]), 'Shift+Tab');
+  assert.equal(winner(getSettings(), 'Tab', 'DIALOG').operation, 'focus.next');
+  assert.equal(winner(getSettings(), 'Tab', 'DIALOG', '', { shiftKey: true }).operation, 'focus.previous');
+  assert.equal(winner(getSettings(), 'q', 'DIALOG'), undefined);
+  const writes = [];
+  saveSettings({ setItem(key, value) { writes.push([key, value]); } }, settings);
+  const saved = JSON.parse(writes[0][1]);
+  assert.equal(bindingLabel(saved.bindings['focus.next'][0]), 'Tab');
+  assert.equal(bindingLabel(saved.bindings['focus.previous'][0]), 'Shift+Tab');
+  loadSettings({ getItem() { return JSON.stringify(settings); } });
+  assert.equal(bindingLabel(getSettings().bindings['focus.next'][0]), 'Tab');
+  assert.equal(bindingLabel(getSettings().bindings['focus.previous'][0]), 'Shift+Tab');
 });
 
 test('same-mode conflicts choose one operation independent of binding order; excluded modes are not conflicts', () => {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import { OPERATIONS, getSettings, defaultSettings, captureKey, bindingLabel, validateSettings, findConflicts,
+  import { SETTINGS_OPERATIONS, getSettings, defaultSettings, captureKey, bindingLabel, validateSettings, findConflicts,
     operationDefinition, saveSettings, isComposingInput, type Binding, type OperationDefinition, type OperationId } from './keybindings';
   import { MODE_HELP, operationHelp } from './keybindingHelp';
   import { lockDocumentScroll } from './documentScroll';
@@ -116,7 +116,7 @@
         <span role="columnheader">キーバインド3</span>
         <span role="columnheader">初期化</span>
       </div>
-      {#each OPERATIONS as operation, rank}
+      {#each SETTINGS_OPERATIONS as operation, rank}
         {@const help = operationHelp(operation.id)}
         <div class="binding-row" role="row">
           <div class="binding-operation" role="rowheader"><strong>{rank + 1}. {operation.label}</strong><small>{categories[operation.category - 1]} · 適用モード: {operation.modes.join(' / ')}</small></div>

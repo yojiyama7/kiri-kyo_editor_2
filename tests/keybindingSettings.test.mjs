@@ -3,7 +3,7 @@ import { before, afterEach, test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
-import { OPERATIONS, defaultSettings, applySettings, getSettings, captureKey, SETTINGS_STORAGE_KEY } from '../src/keybindings.ts';
+import { OPERATIONS, SETTINGS_OPERATIONS, defaultSettings, applySettings, getSettings, captureKey, SETTINGS_STORAGE_KEY } from '../src/keybindings.ts';
 import { lockDocumentScroll } from '../src/documentScroll.ts';
 
 let Settings;
@@ -40,8 +40,8 @@ test('settings renders three editable slots without fixed Esc or add/remove butt
   assert.ok(html.includes('キーバインド2'));
   assert.ok(html.includes('キーバインド3'));
   assert.match(source, /\.binding-header, \.binding-row \{[^}]*grid-template-columns: minmax\(185px, 1fr\) 28px repeat\(3, 118px\) max-content/s);
-  assert.equal(html.match(/role="tooltip"/g)?.length, OPERATIONS.length);
-  assert.equal(html.match(/aria-haspopup="dialog"/g)?.length, OPERATIONS.length);
+  assert.equal(html.match(/role="tooltip"/g)?.length, SETTINGS_OPERATIONS.length);
+  assert.equal(html.match(/aria-haspopup="dialog"/g)?.length, SETTINGS_OPERATIONS.length);
   assert.ok(source.includes('<h3>何をする操作か</h3>'));
   assert.ok(source.includes('<h3>利用可能なモード</h3>'));
   assert.ok(source.includes('<h3>使い方の例</h3>'));
@@ -54,7 +54,9 @@ test('settings renders three editable slots without fixed Esc or add/remove butt
   assert.ok(html.includes('編集の終了・取消 割り当て2'));
   assert.ok(html.includes('編集の終了・取消 割り当て3'));
   assert.ok(html.includes('value="Ctrl+['));
-  assert.equal(html.match(/placeholder="empty"/g)?.length, OPERATIONS.length * 3);
+  assert.equal(html.match(/placeholder="empty"/g)?.length, SETTINGS_OPERATIONS.length * 3);
+  assert.ok(!html.includes('次の項目へ'));
+  assert.ok(!html.includes('前の項目へ'));
   assert.ok(!html.includes(' 固定'));
   assert.ok(!html.includes('>追加<'));
   assert.ok(!html.includes('>削除<'));
