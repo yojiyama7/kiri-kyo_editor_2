@@ -40,7 +40,7 @@ add(4, ['NORMAL', 'VISUAL', 'VISUAL_MULTI'], { 'selection.toggle': '選択を開
 add(4, ['NORMAL'], { 'marker.clear': '標識を削除' });
 for (const [id, label] of Object.entries(MARKER_LABELS)) definitions.push({ id: id as MarkerId, label: `標識 ${label}`, category: 5, modes: ['NORMAL', 'MARKER_SEQUENCE'], sequence: true });
 for (const [id, label] of Object.entries(FORM_LABELS)) definitions.push({ id: id as FormId, label: `form ${label}`, category: 5, modes: ['FORM'], sequence: true });
-add(6, ['NORMAL'], { 'form.start': 'form入力を開始', 'border.start': '境目モードを開始', 'marker.customStart': '標識の自由入力を開始',
+add(6, ['NORMAL'], { 'form.start': 'form入力を開始', 'border.start': '境目モードを開始', 'marker.start': '定型標識入力を開始', 'marker.customStart': '標識の自由入力を開始',
   'arrow.start': '矢印作成を開始', 'arrow.delete': '矢印を削除', 'split.t': 'T化', 'split.d': 'D分割',
   'english.start': '英文・疑似トークンを編集', 'translation.start': '訳文を編集', 'structure.delete': '構造を削除' });
 add(6, edit, { 'entry.reorderDown': '組を下へ入れ替え', 'entry.reorderUp': '組を上へ入れ替え' });
@@ -106,6 +106,8 @@ export function defaultSettings(): BindingSettings {
 }
 function restoreFixedBindings(settings: BindingSettings): BindingSettings {
   const normalized = structuredClone(settings);
+  // v1 settings saved before marker.start was introduced remain usable.
+  if (!normalized.bindings['marker.start']) normalized.bindings['marker.start'] = (DEFAULT_OPERATION_KEY_LABELS['marker.start'] ?? []).map(keyFromLabel);
   for (const id of FIXED_OPERATION_IDS) {
     normalized.bindings[id] = (DEFAULT_OPERATION_KEY_LABELS[id] ?? []).map(keyFromLabel);
   }
@@ -118,9 +120,10 @@ export function subscribeSettings(listener: (settings: BindingSettings) => void)
   listeners.add(listener); listener(getSettings()); return () => { listeners.delete(listener); };
 }
 export function applySettings(settings: BindingSettings): void {
-  const errors = validateSettings(settings);
+  const normalized = restoreFixedBindings(settings);
+  const errors = validateSettings(normalized);
   if (errors.length) throw new Error(errors.join('\n'));
-  active = restoreFixedBindings(settings);
+  active = normalized;
   for (const listener of listeners) listener(active);
 }
 export function sequenceBindings<T extends MarkerId | FormId>(kind: 'marker' | 'form', settings = getSettings()): { sequence: string; value: T }[] {
@@ -163,9 +166,13 @@ export function loadSettings(storage: Pick<Storage, 'getItem'>): string | undefi
   try {
     const raw = storage.getItem(SETTINGS_STORAGE_KEY);
     if (raw === null) { applySettings(defaultSettings()); return; }
-    const parsed: unknown = JSON.parse(raw), errors = validateSettings(parsed);
+    const parsed: unknown = JSON.parse(raw);
+    const migrated = parsed && typeof parsed === 'object' && (parsed as BindingSettings).version === 1
+      && (parsed as BindingSettings).bindings && typeof (parsed as BindingSettings).bindings === 'object'
+      ? restoreFixedBindings(parsed as BindingSettings) : parsed;
+    const errors = validateSettings(migrated);
     if (errors.length) throw new Error(errors.join(' / '));
-    applySettings(parsed as BindingSettings);
+    applySettings(migrated as BindingSettings);
   } catch (error) { applySettings(defaultSettings()); return `キーバインド設定を読み込めませんでした。保存データを保持して初期値を使用します: ${String(error)}`; }
 }
 export function saveSettings(storage: Pick<Storage, 'setItem'>, settings: BindingSettings): void {
@@ -236,7 +243,7 @@ export function findConflicts(settings: BindingSettings): BindingConflict[] {
     }
     for (const buffer of buffers) for (const input of inputs.values()) {
       const result = resolveInput(input, { mode, buffer }, settings);
-      if (mode === 'MARKER_SEQUENCE' && (buffer === '' || result.interpretedAsNormal)) continue;
+      if (mode === 'MARKER_SEQUENCE' && result.interpretedAsNormal) continue;
       const operations = [...new Set(result.candidates.map(c => c.operation))];
       if (operations.length < 2) continue;
       const label = bindingLabel(captureKey(input)!);

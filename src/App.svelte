@@ -518,14 +518,14 @@
     <span><kbd>{keyLabel('arrow.start')}</kbd> 矢印作成・付け替え（{appositionMarkerLabels} は同格）→ 相手で <kbd>{keyLabel('arrow.commit')}</kbd></span>
     <span><kbd>{keyLabel('arrow.delete')}</kbd> 矢印削除（同格は両端で可）</span>
     <span><kbd>{keyLabel('structure.delete')}</kbd> 下線削除・T/D分割解除</span><span><kbd>{keyLabel('marker.clear')}</kbd> 標識削除</span>
-    <span>Normalで <kbd>{keyLabel('marker.customStart')}</kbd> 標識を自由入力</span>
+    <span>Normalで <kbd>{keyLabel('marker.start')}</kbd> 定型標識入力、<kbd>{keyLabel('marker.customStart')}</kbd> 標識を自由入力</span>
     <span><kbd>{keyLabel('history.undo')}</kbd> 元に戻す</span><span><kbd>{keyLabel('history.redo')}</kbd> やり直す</span><span><kbd>{keyLabel('editor.cancel')}</kbd> Normal</span>
   </section>
 
   <details class="marker-guide" on:toggle={finishMarkerInput}>
     <summary>標識の入力（Normal モード）</summary>
     <div class="marker-bindings">{#each markerBindings as binding}<span><kbd>{binding.sequence}</kbd> → {markerLabel(binding.value)}</span>{/each}</div>
-    <p>先頭文字から定型標識入力に切り替わります。移動・{keyLabel('editor.cancel')} で確定して Normal に戻り、Normal の {keyLabel('marker.clear')} で削除します。</p>
+    <p>{keyLabel('marker.start')} で明示的に、または先頭文字から定型標識入力に切り替わります。移動・{keyLabel('editor.cancel')} で確定して Normal に戻り、Normal の {keyLabel('marker.clear')} で削除します。</p>
   </details>
 
   {#if ready}

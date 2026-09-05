@@ -17,6 +17,14 @@ const sequence = sequence => ({ kind: 'sequence', sequence });
 const winner = (settings, key, mode = 'NORMAL', buffer = '', extra = {}) => resolveInput({ key, ...extra }, { mode, buffer }, settings).winner;
 afterEach(() => applySettings(defaultSettings()));
 
+test('preset marker input has an explicit configurable start key', () => {
+  const settings = defaultSettings();
+  assert.equal(bindingLabel(settings.bindings['marker.start'][0]), 'm');
+  assert.equal(winner(settings, 's').operation, 'marker.subject');
+  assert.equal(winner(settings, 'm').operation, 'marker.start');
+  assert.equal(winner(settings, 's', 'MARKER_SEQUENCE').operation, 'marker.subject');
+});
+
 test('every pair of operations has a fixed total order; categories and Undo before Redo are explicit', () => {
   const ids = OPERATIONS.map(op => op.id);
   assert.equal(new Set(ids).size, ids.length);
@@ -57,18 +65,19 @@ test('dialog focus movement stays fixed outside the settings UI and is normalize
 
 test('same-mode conflicts choose one operation independent of binding order; excluded modes are not conflicts', () => {
   const settings = defaultSettings();
-  settings.bindings['cursor.right'] = [chord('s')];
-  assert.equal(winner(settings, 's').operation, 'cursor.right');
+  settings.bindings['cursor.right'] = [chord('m'), chord('s')];
+  assert.equal(winner(settings, 'm').operation, 'cursor.right');
   assert.equal(winner(settings, '/').operation, 'marker.customStart');
   assert.equal(winner(settings, '/', 'BORDER').operation, 'pseudo.start');
   const warnings = findConflicts(settings);
+  assert.ok(warnings.some(w => w.mode === 'NORMAL' && w.input === 'm' && w.winner === 'cursor.right' && w.operations.includes('marker.start')));
   assert.ok(warnings.some(w => w.mode === 'NORMAL' && w.input === 's' && w.winner === 'cursor.right' && w.operations.includes('marker.subject')));
   assert.ok(!warnings.some(w => w.operations.includes('pseudo.start') && w.operations.includes('marker.customStart')));
 });
 
 test('prefixes and valid continuations are not competing new inputs; only executable duplicates conflict', () => {
   const settings = defaultSettings();
-  const s = winner(settings, 's');
+  const s = winner(settings, 's', 'MARKER_SEQUENCE');
   assert.equal(s.operation, 'marker.subject'); assert.equal(s.complete, true); assert.equal(s.hasLonger, true);
   const sa = winner(settings, 'a', 'MARKER_SEQUENCE', s.buffer);
   assert.equal(sa.operation, 'marker.sentenceAdverb'); assert.equal(sa.complete, false);
@@ -80,7 +89,7 @@ test('prefixes and valid continuations are not competing new inputs; only execut
   assert.ok(!warnings.some(w => w.operations.includes('form.past') && w.operations.includes('form.pastParticiple')));
   assert.ok(!warnings.some(w => w.buffer === 's' && w.input === 'a'));
   settings.bindings['marker.verb'] = [sequence('s')];
-  assert.equal(winner(settings, 's').operation, 'marker.subject');
+  assert.equal(winner(settings, 's', 'MARKER_SEQUENCE').operation, 'marker.subject');
   assert.ok(findConflicts(settings).some(w => w.operations.includes('marker.subject') && w.operations.includes('marker.verb')));
 });
 
@@ -100,7 +109,7 @@ test('different pending suffixes share one parsing state, but identical complete
   const settings = defaultSettings();
   settings.bindings['marker.verb'] = [sequence('zzq')];
   settings.bindings['marker.object'] = [sequence('zzp')];
-  assert.equal(winner(settings, 'z').complete, false);
+  assert.equal(winner(settings, 'z', 'MARKER_SEQUENCE').complete, false);
   assert.ok(!findConflicts(settings).some(w => w.operations.includes('marker.verb') && w.operations.includes('marker.object')));
   settings.bindings['marker.object'] = [sequence('zzq')];
   assert.ok(findConflicts(settings).some(w => w.buffer === 'zz' && w.input === 'q' && w.operations.includes('marker.verb') && w.operations.includes('marker.object')));
@@ -194,6 +203,13 @@ test('failed writes retain active settings and draft; corrupt reads retain raw s
   assert.equal(writes, 0);
   assert.deepEqual(getSettings(), defaultSettings());
   assert.match(loadSettings({ getItem() { throw new Error('denied'); } }), /denied/);
+});
+
+test('v1 settings saved before the marker start operation receive its default binding', () => {
+  const legacy = defaultSettings();
+  delete legacy.bindings['marker.start'];
+  assert.equal(loadSettings({ getItem() { return JSON.stringify(legacy); } }), undefined);
+  assert.equal(bindingLabel(getSettings().bindings['marker.start'][0]), 'm');
 });
 
 test('all input helpers use remapped actions; native text modes do not take normal-mode letters', () => {

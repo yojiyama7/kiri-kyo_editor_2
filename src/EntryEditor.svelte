@@ -763,6 +763,14 @@
       if (!isRepeatedInput(event)) startForm();
       return;
     }
+    if (operation === 'marker.start' && mode === 'NORMAL') {
+      event.preventDefault();
+      if (!isRepeatedInput(event)) {
+        const slotId = currentSlotId();
+        if (slotId !== undefined && isSlotEditable({ tokens, slots }, slotId)) mode = 'MARKER_SEQUENCE';
+      }
+      return;
+    }
     if (operation === 'marker.customStart' && mode === 'NORMAL') {
       event.preventDefault();
       if (!matchesKeyboardInput(event, [

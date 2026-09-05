@@ -59,6 +59,7 @@ export const DEFAULT_OPERATION_KEY_LABELS: Partial<Record<KeyboardOperationId, r
   'cursor.rowStart': ['0', 'Home'], 'cursor.rowEnd': ['$', 'End'],
   'form.start': ['f'], 'form.clear': ['x'], 'form.commit': ['Enter'], 'form.eraseInput': ['Backspace'],
   'border.start': ['b'], 'pseudo.start': ['/'], 'pseudo.commit': ['Enter'],
+  'marker.start': ['m'],
   'marker.customStart': ['/'], 'marker.customCommit': ['Enter'],
   'bracket.insertSquareOpen': ['['], 'bracket.insertSquareClose': [']'],
   'bracket.insertRoundOpen': ['('], 'bracket.insertRoundClose': [')'],

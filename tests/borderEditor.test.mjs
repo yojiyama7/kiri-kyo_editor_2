@@ -1576,17 +1576,36 @@ test('Ctrl+[ finishes English and translation editing without inserting a bracke
   }
 });
 
-test('configured movement wins over marker input at a boundary without falling through', async () => {
+test('configured movement wins over marker input start at a boundary without falling through', async () => {
   const { defaultSettings, applySettings, captureKey } = await import('../src/keybindings.ts');
   const settings = defaultSettings();
-  settings.bindings['cursor.left'] = [captureKey({ key: 's' })];
+  settings.bindings['cursor.left'] = [captureKey({ key: 'm' })];
   applySettings(settings);
   try {
     const e = setup();
     const before = e.api.snapshot();
-    e.key('s');
+    e.key('m');
     assert.deepEqual(e.api.snapshot(), before);
     assert.equal(e.display().markerInput.active, false);
+  } finally { applySettings(defaultSettings()); }
+});
+
+test('a remapped modified key explicitly starts preset marker input', async () => {
+  const { defaultSettings, applySettings, captureKey } = await import('../src/keybindings.ts');
+  const settings = defaultSettings();
+  settings.bindings['marker.start'] = [captureKey({ key: 'q', metaKey: true })];
+  applySettings(settings);
+  try {
+    const direct = setup();
+    direct.key('s');
+    assert.equal(direct.api.snapshot().document.slots[0].marker, 'marker.subject');
+    const e = setup();
+    e.key('m');
+    assert.equal(e.display().mode, 'NORMAL');
+    e.key('q', { metaKey: true });
+    assert.equal(e.display().mode, 'MARKER_SEQUENCE');
+    e.key('s');
+    assert.equal(e.api.snapshot().document.slots[0].marker, 'marker.subject');
   } finally { applySettings(defaultSettings()); }
 });
 
@@ -1666,6 +1685,7 @@ test('movement in the middle of a configured marker sequence ends the buffer and
 test('default aux stays in dedicated marker mode, excludes undo and clear, and commits as one undo step', () => {
   const e = setup();
   const before = e.api.snapshot();
+  e.key('m');
   e.key('a');
   assert.equal(e.display().mode, 'MARKER_SEQUENCE');
   assert.equal(e.api.getInputMode(), 'MARKER_SEQUENCE');
