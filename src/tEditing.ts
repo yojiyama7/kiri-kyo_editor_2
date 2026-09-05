@@ -33,7 +33,8 @@ export function splitSlot(document: SavedState, slotId: string, kind: 't' | 'd' 
   return { ...document,
     arrows: document.arrows.map((arrow) => ({ ...arrow,
       sourceSlotId: arrow.sourceSlotId === slotId ? split.leftSlotId : arrow.sourceSlotId,
-      targetSlotId: arrow.kind === 'apposition' && arrow.targetSlotId === slotId ? split.leftSlotId : arrow.targetSlotId,
+      targetSlotId: (arrow.kind === 'apposition' || kind === 't') && arrow.targetSlotId === slotId
+        ? split.leftSlotId : arrow.targetSlotId,
     })),
     splits: [...(document.splits ?? []), split],
     slots: [...setSlotMarker(document.slots, slotId),
@@ -47,6 +48,11 @@ export function unsplitSlot(document: SavedState, slotId: string): SavedState {
   const split = document.splits?.find((split) => [split.slotId, split.leftSlotId, split.rightSlotId].includes(slotId));
   if (!split) return document;
   const marker = document.slots.find((slot) => slot.id === split.leftSlotId)?.marker;
+  if (split.kind !== 'd') document = { ...document,
+    arrows: document.arrows.map((arrow) => arrow.kind !== 'apposition' && arrow.targetSlotId === split.leftSlotId
+      ? { ...arrow, targetSlotId: split.slotId }
+      : arrow),
+  };
   let next = removeSlotsAndDependents(document, [split.leftSlotId, split.rightSlotId]);
   if (split.kind === 'd') next = setOwnerForm(next, split.slotId, split.leftForm);
   return { ...next,

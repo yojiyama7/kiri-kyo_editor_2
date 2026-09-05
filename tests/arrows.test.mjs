@@ -218,15 +218,23 @@ test('pruning happens at the marker transaction boundary and shares its history'
   assert.deepEqual(history.redo(), after);
 });
 
-test('T transfers outgoing arrows left, preserves parent targets and removes disappearing endpoints on undo split', () => {
+test('T transfers outgoing arrows and incoming targets left, then restores left targets on unsplit', () => {
   const original = connectArrow(connectArrow(initial(), 'a', 'b'), 'c', 'a');
   const split = splitSlot(original, 'a'); const left = split.splits[0].leftSlotId;
-  assert.deepEqual(split.arrows, [{ sourceSlotId: left, targetSlotId: 'b' }, { sourceSlotId: 'c', targetSlotId: 'a' }]);
+  assert.deepEqual(split.arrows, [{ sourceSlotId: left, targetSlotId: 'b' }, { sourceSlotId: 'c', targetSlotId: left }]);
   assert.equal(isSavedState(split), true);
   const next = connectArrow(split, 'd', left);
   const restored = unsplitSlot(next, left);
-  assert.deepEqual(restored.arrows, [{ sourceSlotId: 'c', targetSlotId: 'a' }]);
+  assert.deepEqual(restored.arrows, [{ sourceSlotId: 'c', targetSlotId: 'a' }, { sourceSlotId: 'd', targetSlotId: 'a' }]);
   assert.equal(isSavedState(restored), true);
+});
+
+test('D continues to preserve incoming parent targets and removes arrows to its halves on unsplit', () => {
+  const original = connectArrow(initial(), 'c', 'a');
+  const divided = splitSlot(original, 'a', 'd'); const left = divided.splits[0].leftSlotId;
+  assert.deepEqual(divided.arrows, original.arrows);
+  const withHalfTarget = connectArrow(divided, 'd', left);
+  assert.deepEqual(unsplitSlot(withHalfTarget, left).arrows, original.arrows);
 });
 
 test('structural cascade removes incident arrows only and preserves surviving shared-target sources', () => {
