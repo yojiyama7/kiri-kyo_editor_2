@@ -207,6 +207,37 @@ test('reordering swaps adjacent entries and preserves the active entry, cursor, 
   assert.deepEqual(reorderEntry(after, after.activeEntryId, -1), before);
 });
 
+test('reordering closes an empty composite whose interior held the cursor', () => {
+  const before = initial();
+  const active = before.document.entries[1];
+  active.document.groups[0].kind = 'composite';
+  before.cursor = { x: 2, y: 0 };
+  const original = structuredClone(before);
+
+  const after = reorderEntry(before, active.id, 1);
+  const moved = after.document.entries[2];
+  assert.equal(moved.id, active.id);
+  assert.equal(moved.document.groups[0].kind, 'basic');
+  assert.equal(after.document.entries[0], before.document.entries[0]);
+  assert.equal(after.document.entries[1], before.document.entries[2]);
+  assert.deepEqual(before, original);
+  const history = new EditHistory();
+  history.record(before, after);
+  assert.deepEqual(history.undo(), before);
+  assert.deepEqual(history.redo(), after);
+});
+
+test('reordering keeps a composite when one of its direct base slots has a marker', () => {
+  const before = initial();
+  const active = before.document.entries[1];
+  active.document.groups[0].kind = 'composite';
+  active.document.slots.find(({ id }) => id === active.document.groups[0].slots[0]).marker = 'marker.subject';
+  before.cursor = { x: 2, y: 0 };
+
+  const after = reorderEntry(before, active.id, -1);
+  assert.equal(after.document.entries[0].document.groups[0].kind, 'composite');
+});
+
 test('boundary reorder and unknown entries are no-ops that preserve redo', () => {
   const before = initial();
   const history = new EditHistory();
