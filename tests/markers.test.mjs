@@ -7,7 +7,7 @@ import { isSavedState } from '../src/model.ts';
 
 const expected = {
   s: 'S', V: 'V', 1: '(1)', 2: '(2)', 3: '(3)', 4: '(4)', 5: '(5)',
-  '-3': '(-3)', '-4': '-(4)', '-5': '-(5)', a: 'a', ad: 'ad', ac: 'aC',
+  '-3': '-(3)', '-4': '-(4)', '-5': '-(5)', a: 'a', ad: 'ad', ac: 'aC',
   n: 'n', nad: '誘導副詞', nC: 'nC', o: 'O', o1: 'O1', o2: 'O2',
   aux: 'aux', pre: '前', con: '接', ado: '副詞的目的格', sad: '文ad',
   nc: 'nC', "s'": "S'", '+': '+', ps: '仮S', as: '真S',

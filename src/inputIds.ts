@@ -10,7 +10,7 @@ export const MARKER_LABELS = {
   'marker.number3': '(3)',
   'marker.number4': '(4)',
   'marker.number5': '(5)',
-  'marker.negativeNumber3': '(-3)',
+  'marker.negativeNumber3': '-(3)',
   'marker.negativeNumber4': '-(4)',
   'marker.negativeNumber5': '-(5)',
   'marker.plus': '+',
