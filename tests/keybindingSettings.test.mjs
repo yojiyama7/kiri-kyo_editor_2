@@ -3,7 +3,7 @@ import { before, afterEach, test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
-import { defaultSettings, applySettings, getSettings, captureKey, SETTINGS_STORAGE_KEY } from '../src/keybindings.ts';
+import { OPERATIONS, defaultSettings, applySettings, getSettings, captureKey, SETTINGS_STORAGE_KEY } from '../src/keybindings.ts';
 import { lockDocumentScroll } from '../src/documentScroll.ts';
 
 let Settings;
@@ -40,6 +40,7 @@ test('settings renders three editable slots without fixed Esc or add/remove butt
   assert.ok(html.includes('編集の終了・取消 割り当て2'));
   assert.ok(html.includes('編集の終了・取消 割り当て3'));
   assert.ok(html.includes('value="Ctrl+['));
+  assert.equal(html.match(/placeholder="empty"/g)?.length, OPERATIONS.length * 3);
   assert.ok(!html.includes(' 固定'));
   assert.ok(!html.includes('>追加<'));
   assert.ok(!html.includes('>削除<'));

@@ -100,13 +100,13 @@
               {@const binding = editableBindings(operation.id)[index]}
               <div class="binding-slot">
                 {#if operation.sequence}
-                  <input aria-label={`${operation.label} 割り当て${index + 1}`} value={binding?.kind === 'sequence' ? binding.sequence : ''}
+                  <input aria-label={`${operation.label} 割り当て${index + 1}`} value={binding?.kind === 'sequence' ? binding.sequence : ''} placeholder="empty"
                     data-operation={operation.id} data-slot={index}
                     on:input={(event) => updateSequence(event, operation.id, index)}
                     on:keydown={(event) => clearSlot(event, operation.id, index)} />
                 {:else}
                   <input readonly aria-label={`${operation.label} 割り当て${index + 1}`}
-                    value={binding ? bindingLabel(binding) : ''} placeholder="キーを押して登録"
+                    value={binding ? bindingLabel(binding) : ''} placeholder="empty"
                     data-operation={operation.id} data-slot={index}
                     class:recording={recording === `${operation.id}:${index}`}
                     on:focus={() => { recording = `${operation.id}:${index}`; }} on:blur={() => { recording = null; }}
@@ -156,6 +156,7 @@
   .binding-slots { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
   .binding-slot { display: flex; align-items: center; gap: 4px; }
   input { width: 130px; padding: 6px; border: 1px solid #aaa; border-radius: 4px; }
+  input::placeholder { color: #777; opacity: .55; }
   input.recording { outline: 2px solid #2672ae; }
   button { padding: 6px 9px; cursor: pointer; }
   button:disabled { cursor: default; }
