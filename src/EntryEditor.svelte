@@ -153,7 +153,8 @@
     arrows: arrowSegments.filter((segment) => segment.row === rowIndex),
     forms: formRegions.filter(region => region.row === rowIndex),
     formHeight: Math.max(0, ...formRegions.filter(region => region.row === rowIndex).map(region => (region.lane + 1) * 18)),
-    maxY: Math.max(0, ...displayLayout.groups.filter((placement) =>
+    // Keep at least two display rows: the English row and one structure row.
+    maxY: Math.max(1, ...displayLayout.groups.filter((placement) =>
       renderLayout.regionsBySlot.get(placement.group.slotId)!.some((region) => region.row === rowIndex)).map((placement) => placement.y),
       ...arrowSegments.filter((segment) => segment.row === rowIndex).map((segment) => segment.logicalY)),
     highlights: contentHighlights.filter((region) => region.row === rowIndex),
