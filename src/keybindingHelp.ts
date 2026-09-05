@@ -11,6 +11,12 @@ export const MODE_HELP: Record<InputMode, string> = {
   MARKER_SEQUENCE: '定型標識の連続入力', DIALOG: 'ダイアログ', MENU: '操作メニュー',
 };
 
+export const MODE_ABBREVIATIONS: Record<InputMode, string> = {
+  NORMAL: 'N', VISUAL: 'V', VISUAL_MULTI: 'VM', ARROW: 'A', BORDER: 'B', FORM: 'F',
+  INSERT: 'I', TRANSLATION: 'T', PSEUDO_INPUT: 'PI', MARKER_INPUT: 'MI',
+  MARKER_SEQUENCE: 'MS', DIALOG: 'D', MENU: 'M',
+};
+
 const ACTION_HELP = {
   'entry.next': { summary: '編集対象を次の英文・訳文の組へ移します。', description: '現在の編集を必要に応じて確定し、次の組を選択してその位置へ移動します。', example: '第1組を編集中に実行すると、第2組の対応する編集位置へ移ります。' },
   'entry.previous': { summary: '編集対象を前の英文・訳文の組へ移します。', description: '現在の編集を必要に応じて確定し、前の組を選択してその位置へ移動します。', example: '第2組を編集中に実行すると、第1組の対応する編集位置へ戻ります。' },

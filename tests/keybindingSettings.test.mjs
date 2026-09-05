@@ -9,12 +9,14 @@ import { lockDocumentScroll } from '../src/documentScroll.ts';
 let Settings;
 before(async () => {
   let source = readFileSync(new URL('../src/KeybindingSettings.svelte', import.meta.url), 'utf8');
-  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'assignmentSummary', 'save', 'close', 'record']) source = source.replace(`  function ${name}(`, `  export function ${name}(`);
+  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'assignmentSummary', 'operationMatchesFilter', 'modeDescription', 'save', 'close', 'record']) source = source.replace(`  function ${name}(`, `  export function ${name}(`);
   source = source.replace('</script>', `
     export function draftForTest() { return { draft, saveError }; }
     export function setDialogForTest(value: HTMLDialogElement) { dialog = value; }
     export function helpForTest() { return selectedHelp; }
     export function setHelpDialogForTest(value: HTMLDialogElement) { helpDialog = value; }
+    export function setModeFilterForTest(value: InputMode | '') { modeFilter = value; }
+    export function visibleOperationsForTest() { return SETTINGS_OPERATIONS.filter(operationMatchesFilter); }
   </script>`);
   const { js } = compile(source, { generate: 'server' });
   const code = js.code.replace(/from '([^']+)'/g, (_, specifier) => `from '${specifier.startsWith('./') ? new URL('../src/' + specifier.slice(2) + '.ts', import.meta.url).href : import.meta.resolve(specifier)}'`);
@@ -24,7 +26,7 @@ afterEach(() => { applySettings(defaultSettings()); delete globalThis.localStora
 function setup() {
   const api = {}, events = [];
   const props = { onclose: () => events.push('cancel'), onsaved: () => events.push('save') };
-  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'assignmentSummary', 'save', 'close', 'record', 'draftForTest', 'setDialogForTest', 'helpForTest', 'setHelpDialogForTest']) Object.defineProperty(props, name, { set(value) { api[name] = value; } });
+  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'assignmentSummary', 'operationMatchesFilter', 'modeDescription', 'save', 'close', 'record', 'draftForTest', 'setDialogForTest', 'helpForTest', 'setHelpDialogForTest', 'setModeFilterForTest', 'visibleOperationsForTest']) Object.defineProperty(props, name, { set(value) { api[name] = value; } });
   const html = render(Settings, { props }).body;
   api.setDialogForTest({ close() { events.push('close'); }, querySelector() {} });
   api.setHelpDialogForTest({ showModal() { events.push('help-open'); }, close() { events.push('help-close'); } });
@@ -35,6 +37,8 @@ test('settings renders three editable slots without fixed Esc or add/remove butt
   const { html } = setup();
   const source = readFileSync(new URL('../src/KeybindingSettings.svelte', import.meta.url), 'utf8');
   assert.ok(html.includes('固定優先順位順の操作'));
+  assert.ok(html.includes('前提モード'));
+  assert.ok(html.includes('通常編集（N）'));
   assert.ok(html.includes('role="table"'));
   assert.ok(html.includes('キーバインド1'));
   assert.ok(html.includes('キーバインド2'));
@@ -46,8 +50,8 @@ test('settings renders three editable slots without fixed Esc or add/remove butt
   assert.ok(source.includes('<h3>利用可能なモード</h3>'));
   assert.ok(source.includes('<h3>使い方の例</h3>'));
   assert.ok(html.includes('競合警告'));
-  assert.ok(html.includes('NORMAL'));
-  assert.ok(html.includes('MARKER_SEQUENCE'));
+  assert.ok(html.includes('aria-label="通常編集 (NORMAL)"'));
+  assert.ok(html.includes('aria-label="定型標識の連続入力 (MARKER_SEQUENCE)"'));
   assert.ok(html.includes('Escは設定欄には表示されません'));
   assert.ok(html.includes('保存'));
   assert.ok(html.includes('編集の終了・取消 割り当て1'));
@@ -60,6 +64,19 @@ test('settings renders three editable slots without fixed Esc or add/remove butt
   assert.ok(!html.includes(' 固定'));
   assert.ok(!html.includes('>追加<'));
   assert.ok(!html.includes('>削除<'));
+});
+
+test('mode filter shows operations containing the selected prerequisite mode', () => {
+  const { api } = setup();
+  assert.equal(api.visibleOperationsForTest().length, SETTINGS_OPERATIONS.length);
+  api.setModeFilterForTest('NORMAL');
+  assert.deepEqual(api.visibleOperationsForTest().map(operation => operation.id),
+    SETTINGS_OPERATIONS.filter(operation => operation.modes.includes('NORMAL')).map(operation => operation.id));
+  assert.ok(api.visibleOperationsForTest().some(operation => operation.modes.length > 1));
+  assert.ok(!api.visibleOperationsForTest().some(operation => operation.id === 'form.commit'));
+  api.setModeFilterForTest('FORM');
+  assert.ok(api.visibleOperationsForTest().some(operation => operation.id === 'form.commit'));
+  assert.ok(!api.visibleOperationsForTest().some(operation => operation.id === 'marker.clear'));
 });
 
 test('slot edits stay dense, per-operation reset restores defaults and cancellation discards them', () => {
