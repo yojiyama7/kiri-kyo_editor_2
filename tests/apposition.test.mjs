@@ -98,13 +98,13 @@ test('marker pruning preserves empty endpoints but removes disallowed markers at
   assert.deepEqual(pruneArrows({ ...d, slots: d.slots.filter((s) => s.id !== 'b') }).arrows, []);
 });
 
-test('both T and D move apposition endpoints left; only T restores directed left targets on unsplit', () => {
+test('both T and D move all targets left, restore directed targets, and remove apposition on unsplit', () => {
   for (const kind of ['t', 'd']) for (const id of ['a', 'b']) {
     let d = connectApposition(initial(), 'a', 'b');
     d = connectArrow(mark(d, 'c', 'marker.adverb'), 'c', id);
     const next = splitSlot(d, id, kind);
     const left = next.splits[0].leftSlotId;
-    const directed = kind === 't' ? { ...d.arrows[1], targetSlotId: left } : d.arrows[1];
+    const directed = { ...d.arrows[1], targetSlotId: left };
     assert.deepEqual(next.arrows, [edge(id === 'a' ? left : 'a', id === 'b' ? left : 'b'), directed]);
     assert.equal(isSavedState(next), true);
     assert.deepEqual(unsplitSlot(next, left).arrows, [d.arrows[1]]);

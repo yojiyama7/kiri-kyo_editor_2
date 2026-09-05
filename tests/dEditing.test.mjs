@@ -51,7 +51,7 @@ test('neither split kind permits splitting an existing parent or either child', 
   }
 });
 
-test('D keeps source references, transfers marker and outgoing arrow left, and retains incoming arrows', () => {
+test('D keeps source references and transfers marker plus outgoing and incoming arrows left', () => {
   let d = initial();
   d.slots = setSlotMarker(setSlotMarker(d.slots, 'a', 'marker.adverb'), 'd', 'marker.adjective');
   const parent = addGroup(d, ['a', 'b']);
@@ -65,7 +65,7 @@ test('D keeps source references, transfers marker and outgoing arrow left, and r
   assert.deepEqual(next.groups[0], parent);
   assert.deepEqual(next.arrows, [
     { sourceSlotId: split.leftSlotId, targetSlotId: 'c' },
-    { sourceSlotId: 'd', targetSlotId: 'a' },
+    { sourceSlotId: 'd', targetSlotId: split.leftSlotId },
   ]);
   assert.equal(isSavedState(next), true);
   assert.equal(settleBasicGroups(next, { x: 4, y: 0 }).document.groups[0].kind, 'composite');
