@@ -17,3 +17,9 @@
 - 原因: 一部の検証は、実時間の待機、連続入力、またはブラウザー起動を必要とする。
 - 対策: 通常は `npm test` のみを使い、ユーザーが明示した場合に限って `npm run test:all` または `npm run test:slow` を実行する。詳細は `AGENTS.md` を参照する。
 - 関連: `tests/slow/`、`*.slow.test.mjs`、`tests/run-tests.mjs`
+
+### モーダル内スクロールの背後への連鎖
+
+- 原因: モーダル内のスクロール領域が端に達すると、ホイール操作がルートのスクロールへ連鎖し、背後のエディタが移動しうる。
+- 対策: モーダル表示中は文書ルートとbodyのスクロールを固定し、モーダルと内部スクロール領域には `overscroll-behavior` を指定する。解除時は元のinline指定を復元し、後から設定された別のスクロール方針を上書きしない。
+- 関連: `src/KeybindingSettings.svelte`、`src/documentScroll.ts`、`tests/keybindingSettings.test.mjs`

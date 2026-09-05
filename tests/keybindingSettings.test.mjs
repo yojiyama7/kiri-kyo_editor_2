@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
 import { defaultSettings, applySettings, getSettings, captureKey, SETTINGS_STORAGE_KEY } from '../src/keybindings.ts';
+import { lockDocumentScroll } from '../src/documentScroll.ts';
 
 let Settings;
 before(async () => {
@@ -75,4 +76,29 @@ test('failed save keeps the dialog draft, retry saves conflicts and closes once'
   assert.equal(writes[0][0], SETTINGS_STORAGE_KEY);
   assert.equal(getSettings().bindings['cursor.left'][0].key, 's');
   assert.deepEqual(events, ['close', 'save']);
+});
+
+test('settings scroll lock freezes and restores the background document', () => {
+  const document = {
+    documentElement: { style: { overflow: 'scroll' } },
+    body: { style: { overflow: '' } },
+  };
+  const unlock = lockDocumentScroll(document);
+  assert.equal(document.documentElement.style.overflow, 'hidden');
+  assert.equal(document.body.style.overflow, 'hidden');
+  unlock();
+  assert.equal(document.documentElement.style.overflow, 'scroll');
+  assert.equal(document.body.style.overflow, '');
+});
+
+test('settings scroll unlock does not overwrite a newer scroll policy', () => {
+  const document = {
+    documentElement: { style: { overflow: '' } },
+    body: { style: { overflow: '' } },
+  };
+  const unlock = lockDocumentScroll(document);
+  document.body.style.overflow = 'clip';
+  unlock();
+  assert.equal(document.documentElement.style.overflow, '');
+  assert.equal(document.body.style.overflow, 'clip');
 });

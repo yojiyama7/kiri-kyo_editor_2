@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { OPERATIONS, getSettings, defaultSettings, captureKey, bindingLabel, validateSettings, findConflicts,
     operationDefinition, saveSettings, isComposingInput, type Binding, type OperationId } from './keybindings';
+  import { lockDocumentScroll } from './documentScroll';
   export let onclose: () => void;
   export let onsaved: () => void;
   let dialog: HTMLDialogElement;
@@ -11,7 +12,10 @@
   const categories = ['取消', '移動', 'Undo / Redo', 'モード内操作', '標識・form入力', '操作開始・構造変更'];
   $: errors = validateSettings(draft);
   $: conflicts = findConflicts(draft);
-  onMount(() => { dialog.showModal(); });
+  onMount(() => {
+    dialog.showModal();
+    return lockDocumentScroll(document);
+  });
   function replace(id: OperationId, index: number, binding: Binding) {
     draft = { ...draft, bindings: { ...draft.bindings, [id]: draft.bindings[id].map((old, i) => i === index ? binding : old) } };
     saveError = '';
@@ -106,13 +110,13 @@
 </dialog>
 
 <style>
-  .keybinding-settings { width: min(1100px, 94vw); max-height: 90vh; padding: 0; border: 1px solid #aaa; border-radius: 10px; color: #222; background: white; }
+  .keybinding-settings { width: min(1100px, 94vw); max-height: 90vh; padding: 0; border: 1px solid #aaa; border-radius: 10px; color: #222; background: white; overscroll-behavior: contain; }
   .keybinding-settings::backdrop { background: #0006; }
   header, footer { padding: 16px 20px; background: #f6f6f6; }
   header p { margin: 6px 0; font-size: .85rem; }
   h2 { margin: 0 0 8px; }
   .settings-content { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); height: 58vh; overflow: hidden; }
-  .binding-list { min-width: 0; min-height: 0; overflow: auto; }
+  .binding-list { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
   .binding-row { padding: 12px 16px; border-bottom: 1px solid #ddd; }
   small { display: block; color: #666; font-size: .75rem; margin-top: 4px; }
   .binding-slots { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
@@ -121,7 +125,7 @@
   input.recording { outline: 2px solid #2672ae; }
   button { padding: 6px 9px; cursor: pointer; }
   button:disabled { cursor: default; }
-  aside { min-height: 0; overflow: auto; padding: 12px; border-left: 1px solid #ddd; background: #fffaf0; }
+  aside { min-height: 0; overflow: auto; padding: 12px; border-left: 1px solid #ddd; background: #fffaf0; overscroll-behavior: contain; }
   h3 { font-size: .95rem; }
   .conflict { border-bottom: 1px solid #e1cda4; padding: 10px 0; font-size: .8rem; overflow-wrap: anywhere; }
   .conflict p { margin: 6px 0; }
