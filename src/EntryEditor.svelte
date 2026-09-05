@@ -311,6 +311,17 @@
     node.focus();
   }
 
+  function focusTranslation(node: HTMLTextAreaElement, editing: boolean) {
+    const update = (active: boolean) => {
+      if (active) node.focus();
+      // Keep the first line at the same origin after ending an edit.
+      node.scrollTop = 0;
+      node.scrollLeft = 0;
+    };
+    update(editing);
+    return { update };
+  }
+
   function sentenceFromTokens(): string {
     return realSentence(tokens);
   }
@@ -1374,8 +1385,11 @@
     {/if}
 
     <div class="translation-block">
-      {#if mode === 'TRANSLATION'}
-        <textarea bind:value={translation} aria-label="訳文" rows="3" use:focusOnMount
+      <div class="translation-field">
+        <div class="translation-mirror" aria-hidden="true">{(translation || 'Tabを押して訳文を入力') + '\u200b'}</div>
+        <textarea bind:value={translation} aria-label="訳文" rows="1"
+          readonly={mode !== 'TRANSLATION'} tabindex={mode === 'TRANSLATION' ? 0 : -1}
+          placeholder="Tabを押して訳文を入力" use:focusTranslation={mode === 'TRANSLATION'}
           on:input={translationActivity} on:keyup={translationActivity}
           on:pointerdown={translationActivity} on:pointerup={translationActivity}
           on:click={translationActivity} on:select={translationActivity}
@@ -1384,6 +1398,7 @@
           on:compositionupdate={translationActivity}
           on:compositionend={() => { translationComposing = false; translationActivity(); }}
           on:keydown={(event) => {
+            if (mode !== 'TRANSLATION') return;
             translationActivity();
             const translationOperation = resolveKeyboardOperation(event, [
               { operation: 'translation.blockTab', rules: [
@@ -1409,9 +1424,9 @@
               enterNormal();
             }
           }}></textarea>
+      </div>
+      {#if mode === 'TRANSLATION'}
         <button type="button" on:click={enterNormal}>完了</button>
-      {:else}
-        <p>{translation || 'Tabを押して訳文を入力'}</p>
       {/if}
     </div>
   </section>
