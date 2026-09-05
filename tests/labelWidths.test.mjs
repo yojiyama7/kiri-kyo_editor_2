@@ -134,18 +134,31 @@ test('T/D group labels are measured on the source and halves follow the expanded
   }
 });
 
-test('unequal D render regions follow their saved ratio', () => {
+test('unequal D logical regions retain their saved ratio while empty render regions are equal', () => {
   const d = document('a b c d', [['g', ['a', 'b', 'c'], 'ado']]);
   const divided = splitSlot(d, 'g', 'd', 0);
   const ratio = divided.splits[0].ratio;
   assert.equal(ratio, 1 / 3);
-  const v = render(divided, [30, 30, 30, 30], [['g', 300]], 1000);
+  const logical = computeLayout(divided.tokens, divided.groups, divided.splits);
+  assert.deepEqual(logical.rangesBySlot.get(divided.splits[0].leftSlotId), [{ start: 0, end: 1 }]);
+  assert.deepEqual(logical.rangesBySlot.get(divided.splits[0].rightSlotId), [{ start: 1, end: 3 }]);
+  const v = render(divided, [30, 30, 30, 30], [], 1000, undefined,
+    [[divided.splits[0].leftSlotId, 16], [divided.splits[0].rightSlotId, 16]]);
   const source = region(v, 'g');
   const left = region(v, divided.splits[0].leftSlotId);
   const right = region(v, divided.splits[0].rightSlotId);
-  near(width(left), width(source) * ratio);
-  near(width(right), width(source) * (1 - ratio));
+  near(width(left), width(source) / 2);
+  near(width(right), width(source) / 2);
   near(left.right, right.left);
+});
+
+test('unequal D render regions stay equal when both required widths fit in half', () => {
+  const divided = splitSlot(document('a b c d', [['g', ['a', 'b', 'c'], 'ado']]), 'g', 'd', 0);
+  const split = divided.splits[0];
+  const v = render(divided, [100, 90, 90, 30], [], 1000, undefined,
+    [[split.leftSlotId, 60], [split.rightSlotId, 30]]);
+  near(width(region(v, split.leftSlotId)), 150);
+  near(width(region(v, split.rightSlotId)), 150);
 });
 
 test('D halves expand independently to their own label widths while T remains symmetric', () => {
@@ -166,7 +179,7 @@ test('D halves expand independently to their own label widths while T remains sy
   }
 });
 
-test('unequal D expands both sides independently without changing the logical ratio or token widths', () => {
+test('unequal D expands constrained sides independently without changing the logical ratio or token widths', () => {
   const divided = splitSlot(document('a b c d', [['g', ['a', 'b', 'c'], 'ado']]), 'g', 'd', 0);
   const split = divided.splits[0];
   const logical = computeLayout(divided.tokens, divided.groups, divided.splits);

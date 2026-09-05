@@ -114,7 +114,6 @@ function placeRegions(tokens: readonly Token[], groups: readonly Group[], splits
   function applySplit(split: SlotSplit, source: RenderRegion[]): void {
     if (appliedSplits.has(split.slotId)) return;
     const last = source[source.length - 1];
-    const ratio = split.kind === 'd' ? split.ratio ?? 0.5 : 0.5;
     const originalLeft = last.left;
     const originalRight = last.right;
     const originalWidth = originalRight - originalLeft;
@@ -127,8 +126,9 @@ function placeRegions(tokens: readonly Token[], groups: readonly Group[], splits
     const center = (originalLeft + originalRight) / 2;
     const left = center - totalWidth / 2;
     const right = center + totalWidth / 2;
+    // A saved D ratio restores logical ownership only; display starts at 1:1.
     const leftWidth = split.kind === 'd'
-      ? Math.min(totalWidth - rightMinimum, Math.max(leftMinimum, totalWidth * ratio))
+      ? Math.min(totalWidth - rightMinimum, Math.max(leftMinimum, totalWidth / 2))
       : totalWidth / 2;
     const middle = left + leftWidth;
     if (left < originalLeft || right > originalRight) {
