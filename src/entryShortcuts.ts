@@ -5,7 +5,7 @@ import { type KeyboardOperationId } from './keyboardOperations.ts';
 type ShortcutEvent = KeyboardInput;
 export type EntryShortcut = Extract<KeyboardOperationId,
   'entry.next' | 'entry.previous' | 'entry.reorderDown' | 'entry.reorderUp'>;
-export type EntryInputMode = 'INSERT' | 'TRANSLATION' | 'PSEUDO_INPUT' | 'MARKER_INPUT' | 'FORM' | null;
+export type EntryInputMode = 'INSERT' | 'TRANSLATION' | 'PSEUDO_INPUT' | 'MARKER_INPUT' | 'MARKER_SEQUENCE' | 'FORM' | null;
 
 export function entryShortcut(event: ShortcutEvent, inputMode: EntryInputMode): EntryShortcut | undefined {
   const mode = inputMode ?? 'NORMAL';

@@ -49,14 +49,14 @@
   <header>
     <h2 id="keybinding-title">キーバインド設定</h2>
     <p>上ほど優先されます。各操作3件まで。Escは固定です。競合があっても保存できます。</p>
-    <p>キー欄を選んで実際のキーを押してください。標識・formは文字列を入力します。連続入力に時間制限はありません。</p>
+    <p>キー欄を選んで実際のキーを押してください。標識・formは文字列を入力します。定型標識は先頭文字から専用モードに入り、続きの入力に時間制限はありません。</p>
     <p>OS・ブラウザーが先に処理するキーは、アプリへ届かない場合があります。この競合の完全検出はできません。</p>
   </header>
   <div class="settings-content">
     <section class="binding-list" aria-label="固定優先順位順の操作">
       {#each OPERATIONS as operation, rank}
         <div class="binding-row">
-          <div><strong>{rank + 1}. {operation.label}</strong><small>{categories[operation.category - 1]} · {operation.modes.join(' / ')}</small></div>
+          <div><strong>{rank + 1}. {operation.label}</strong><small>{categories[operation.category - 1]} · 適用モード: {operation.modes.join(' / ')}</small></div>
           <div class="binding-slots">
             {#each draft.bindings[operation.id] as binding, index}
               {@const fixed = binding.kind === 'key' && binding.key === 'Escape'}

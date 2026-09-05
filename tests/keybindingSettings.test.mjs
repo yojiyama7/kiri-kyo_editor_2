@@ -32,8 +32,9 @@ test('settings renders fixed Esc, ranked modes and warnings without launching a 
   assert.ok(html.includes('固定優先順位順の操作'));
   assert.ok(html.includes('競合警告'));
   assert.ok(html.includes('NORMAL'));
+  assert.ok(html.includes('MARKER_SEQUENCE'));
   assert.ok(html.includes('固定'));
-  assert.ok(html.includes('保存（競合あり）'));
+  assert.ok(html.includes('保存'));
   assert.ok(!html.includes('編集の終了・取消 割り当て1を削除'));
 });
 

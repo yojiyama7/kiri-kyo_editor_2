@@ -46,9 +46,9 @@ test('prefixes and valid continuations are not competing new inputs; only execut
   const settings = defaultSettings();
   const s = winner(settings, 's');
   assert.equal(s.operation, 'marker.subject'); assert.equal(s.complete, true); assert.equal(s.hasLonger, true);
-  const sa = winner(settings, 'a', 'NORMAL', s.buffer);
+  const sa = winner(settings, 'a', 'MARKER_SEQUENCE', s.buffer);
   assert.equal(sa.operation, 'marker.sentenceAdverb'); assert.equal(sa.complete, false);
-  assert.equal(winner(settings, 'd', 'NORMAL', sa.buffer).operation, 'marker.sentenceAdverb');
+  assert.equal(winner(settings, 'd', 'MARKER_SEQUENCE', sa.buffer).operation, 'marker.sentenceAdverb');
   assert.equal(winner(settings, 'p', 'FORM').operation, 'form.past');
   assert.equal(winner(settings, 'p', 'FORM', 'p').operation, 'form.pastParticiple');
   const warnings = findConflicts(settings);
@@ -60,15 +60,16 @@ test('prefixes and valid continuations are not competing new inputs; only execut
   assert.ok(findConflicts(settings).some(w => w.operations.includes('marker.subject') && w.operations.includes('marker.verb')));
 });
 
-test('mid-sequence movement and Undo are warned and win, while lower-priority structural commands lose', () => {
+test('mid-sequence movement is warned and wins, while Undo, clear and structural commands are excluded', () => {
   const settings = defaultSettings();
+  assert.equal(findConflicts(settings).length, 0);
   settings.bindings['cursor.left'] = [chord('a')];
-  assert.equal(winner(settings, 'a', 'NORMAL', 's').operation, 'cursor.left');
+  assert.equal(winner(settings, 'a', 'MARKER_SEQUENCE', 's').operation, 'cursor.left');
   assert.ok(findConflicts(settings).some(w => w.buffer === 's' && w.input === 'a' && w.affectedSequences.includes('sad')));
-  assert.equal(winner(settings, 'u', 'NORMAL', 'a').operation, 'history.undo');
-  assert.ok(findConflicts(settings).some(w => w.buffer === 'a' && w.input === 'u' && w.winner === 'history.undo'));
-  assert.equal(winner(settings, 'd', 'NORMAL', 'sa').operation, 'marker.sentenceAdverb');
-  assert.ok(findConflicts(settings).some(w => w.buffer === 'sa' && w.input === 'd' && w.operations.includes('split.d')));
+  assert.equal(winner(settings, 'u', 'MARKER_SEQUENCE', 'a').operation, 'marker.auxiliary');
+  assert.ok(!findConflicts(settings).some(w => w.buffer === 'a' && w.input === 'u'));
+  assert.equal(winner(settings, 'd', 'MARKER_SEQUENCE', 'sa').operation, 'marker.sentenceAdverb');
+  assert.ok(!findConflicts(settings).some(w => w.buffer === 'sa' && w.input === 'd' && w.operations.includes('split.d')));
 });
 
 test('different pending suffixes share one parsing state, but identical completed suffixes warn', () => {
@@ -79,6 +80,22 @@ test('different pending suffixes share one parsing state, but identical complete
   assert.ok(!findConflicts(settings).some(w => w.operations.includes('marker.verb') && w.operations.includes('marker.object')));
   settings.bindings['marker.object'] = [sequence('zzq')];
   assert.ok(findConflicts(settings).some(w => w.buffer === 'zz' && w.input === 'q' && w.operations.includes('marker.verb') && w.operations.includes('marker.object')));
+});
+
+test('marker sequence mode retries only failed continuations as NORMAL and ignores repeated characters', () => {
+  const settings = defaultSettings();
+  let result = resolveInput({ key: 'x' }, { mode: 'MARKER_SEQUENCE', buffer: 'a' }, settings);
+  assert.equal(result.interpretedAsNormal, true);
+  assert.equal(result.winner.operation, 'marker.clear');
+  result = resolveInput({ key: 'u' }, { mode: 'MARKER_SEQUENCE', buffer: 'a' }, settings);
+  assert.equal(result.interpretedAsNormal, false);
+  assert.equal(result.winner.operation, 'marker.auxiliary');
+  assert.equal(result.winner.complete, false);
+  assert.deepEqual(resolveInput({ key: 'u', repeat: true }, { mode: 'MARKER_SEQUENCE', buffer: 'a' }, settings),
+    { candidates: [], interpretedAsNormal: false });
+  result = resolveInput({ key: 'Shift' }, { mode: 'MARKER_SEQUENCE', buffer: 'a' }, settings);
+  assert.deepEqual(result.candidates, []);
+  assert.equal(result.interpretedAsNormal, false);
 });
 
 test('modified keys, Shift case and symbols, and Option physical keys use the same normalization for matching and warnings', () => {

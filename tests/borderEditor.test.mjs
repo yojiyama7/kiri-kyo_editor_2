@@ -1620,3 +1620,104 @@ test('movement in the middle of a configured marker sequence ends the buffer and
     assert.equal(e.display().markerInput.buffer, '');
   } finally { applySettings(defaultSettings()); }
 });
+
+test('default aux stays in dedicated marker mode, excludes undo and clear, and commits as one undo step', () => {
+  const e = setup();
+  const before = e.api.snapshot();
+  e.key('a');
+  assert.equal(e.display().mode, 'MARKER_SEQUENCE');
+  assert.equal(e.api.getInputMode(), 'MARKER_SEQUENCE');
+  assert.equal(e.api.snapshot().document.slots[0].marker, 'marker.adjective');
+  e.key('u');
+  assert.equal(e.display().mode, 'MARKER_SEQUENCE');
+  assert.equal(e.display().markerInput.buffer, 'au');
+  assert.equal(e.undoCalls.length, 0);
+  e.key('x');
+  assert.equal(e.display().mode, 'NORMAL');
+  assert.equal(e.api.snapshot().document.slots[0].marker, 'marker.auxiliary');
+  assert.equal(e.records.length, 1);
+  e.key('u');
+  assert.deepEqual(e.api.snapshot(), before);
+});
+
+test('marker sequences support sad, immediate markers, failed-key retry and committed cancellation', () => {
+  let e = setup();
+  e.key('s'); e.key('a');
+  assert.equal(e.api.snapshot().document.slots[0].marker, 'marker.subject');
+  assert.equal(e.display().markerInput.buffer, 'sa');
+  e.key('d');
+  assert.equal(e.api.snapshot().document.slots[0].marker, 'marker.sentenceAdverb');
+  assert.equal(e.display().mode, 'NORMAL');
+  assert.equal(e.records.length, 1);
+
+  e = setup();
+  e.key('V');
+  assert.equal(e.display().mode, 'NORMAL');
+  assert.equal(e.api.snapshot().document.slots[0].marker, 'marker.verb');
+  assert.equal(e.records.length, 1);
+
+  e = setup();
+  e.key('a'); e.key('b');
+  assert.equal(e.api.snapshot().document.slots[0].marker, 'marker.adjective');
+  assert.equal(e.display().mode, 'BORDER');
+  assert.equal(e.records.length, 1);
+
+  e = setup();
+  e.key('a'); e.key('Escape');
+  assert.equal(e.display().mode, 'NORMAL');
+  assert.equal(e.api.snapshot().document.slots[0].marker, 'marker.adjective');
+  assert.equal(e.records.length, 1);
+});
+
+test('marker sequence repeats and modifier-only keys preserve the buffer; click and explicit finish commit it', () => {
+  let e = setup();
+  e.key('a');
+  e.key('u', { repeat: true });
+  e.key('Shift');
+  assert.equal(e.display().mode, 'MARKER_SEQUENCE');
+  assert.equal(e.display().markerInput.buffer, 'a');
+  e.api.clickSlotId('b');
+  assert.equal(e.display().mode, 'NORMAL');
+  assert.equal(e.api.snapshot().document.slots[0].marker, 'marker.adjective');
+  assert.equal(e.api.snapshot().cursor.x, 1);
+  assert.equal(e.records.length, 2);
+
+  e = setup();
+  e.key('a'); e.api.finishMarkerInput();
+  assert.equal(e.display().mode, 'NORMAL');
+  assert.equal(e.records.length, 1);
+});
+
+test('marker prefixes without an editable target or complete match change neither mode nor history', () => {
+  let e = setup({ ...initialDocument(), tokens: [], slots: [] });
+  e.key('a');
+  assert.equal(e.display().mode, 'NORMAL');
+  assert.equal(e.records.length, 0);
+
+  e = setup();
+  const before = e.api.snapshot();
+  e.key('p');
+  assert.equal(e.display().mode, 'MARKER_SEQUENCE');
+  assert.deepEqual(e.api.snapshot(), before);
+  e.key('Escape');
+  assert.equal(e.display().mode, 'NORMAL');
+  assert.equal(e.records.length, 0);
+  e.key('u');
+  assert.deepEqual(e.api.snapshot(), before);
+});
+
+test('entry movement commits marker input before moving and also exits at a missing destination', () => {
+  for (const count of [1, 2]) {
+    const editors = Array.from({ length: count }, () => setup());
+    const router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation, editors.map(e => e.api), 0);
+    editors[0].key('a');
+    router.handleKeydown({ key: 'p', ctrlKey: true, target: null, preventDefault() {} });
+    assert.equal(router.activeIndex(), 0);
+    assert.equal(editors[0].display().mode, 'NORMAL');
+    assert.equal(editors[0].records.length, 1);
+    editors[0].key('a');
+    router.handleKeydown({ key: 'n', ctrlKey: true, target: null, preventDefault() {} });
+    assert.equal(router.activeIndex(), count === 2 ? 1 : 0);
+    assert.equal(editors[0].display().mode, 'NORMAL');
+  }
+});

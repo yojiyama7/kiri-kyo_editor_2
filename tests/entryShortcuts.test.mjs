@@ -23,12 +23,19 @@ test('input mode and composition/modifier guards also apply to repeated shortcut
         assert.equal(entryShortcut({ ...input, repeat }, mode), undefined);
       }
       for (const extra of [{ isComposing: true }, { keyCode: 229 }, { metaKey: true }, { shiftKey: true }, { ctrlKey: true, altKey: true }]) {
-        for (const mode of [null, 'INSERT', 'TRANSLATION', 'PSEUDO_INPUT', 'MARKER_INPUT', 'FORM']) {
+        for (const mode of [null, 'INSERT', 'TRANSLATION', 'PSEUDO_INPUT', 'MARKER_INPUT', 'MARKER_SEQUENCE', 'FORM']) {
           assert.equal(entryShortcut({ ...input, ...extra, repeat }, mode), undefined);
         }
       }
     }
   }
+});
+
+test('marker sequence mode allows entry movement but not reordering', () => {
+  assert.equal(entryShortcut(event('n', { ctrlKey: true }), 'MARKER_SEQUENCE'), 'entry.next');
+  assert.equal(entryShortcut(event('p', { ctrlKey: true }), 'MARKER_SEQUENCE'), 'entry.previous');
+  assert.equal(entryShortcut(event('j', { altKey: true }), 'MARKER_SEQUENCE'), undefined);
+  assert.equal(entryShortcut(event('k', { altKey: true }), 'MARKER_SEQUENCE'), undefined);
 });
 
 test('ordinary navigation, negative markers, redo and superseded Ctrl+j/k remain available to the entry editor', () => {

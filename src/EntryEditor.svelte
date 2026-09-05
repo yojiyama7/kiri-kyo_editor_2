@@ -1,6 +1,6 @@
 <script lang="ts">
   import { moveBorderOperation } from './borderNavigation';
-  import { resolveInput, sequenceBindings, getSettings, isComposingInput, isRepeatedInput, isModifierInput, operationMatches, type Candidate, type Resolution, type InputMode, type BindingSettings } from './keybindings';
+  import { resolveInput, sequenceBindings, getSettings, isComposingInput, isRepeatedInput, operationMatches, type Candidate, type Resolution, type InputMode, type BindingSettings } from './keybindings';
   import { matchesKeyboardInput } from './keyboard';
   import { type KeyboardOperationId } from './keyboardOperations';
   import { createGroup, FORM_LABELS, GROUP_KIND_LABELS, isBracket, type BracketText, type Group, type SavedState, type SlotSplit, type Arrow, isArrowMarker, isAppositionMarker, isAppositionEndpoint } from './model';
@@ -43,7 +43,7 @@
     moveToRowEdge as getRowEdgeCursor,
   } from './layout';
 
-  type Mode = 'NORMAL' | 'BORDER' | 'VISUAL' | 'VISUAL_MULTI' | 'ARROW' | 'INSERT' | 'TRANSLATION' | 'PSEUDO_INPUT' | 'MARKER_INPUT' | 'FORM';
+  type Mode = 'NORMAL' | 'BORDER' | 'VISUAL' | 'VISUAL_MULTI' | 'ARROW' | 'INSERT' | 'TRANSLATION' | 'PSEUDO_INPUT' | 'MARKER_INPUT' | 'MARKER_SEQUENCE' | 'FORM';
 
   function bracketTextForOperation(operation: KeyboardOperationId | undefined): BracketText | undefined {
     if (operation === 'bracket.insertSquareOpen') return '[';
@@ -500,7 +500,7 @@
   export function restore(state: EditorSnapshot, settle = true) {
     cancelForm();
     // A restored normal cursor must not be replaced by a stale border index.
-    if (mode === 'BORDER' || mode === 'PSEUDO_INPUT' || mode === 'MARKER_INPUT') mode = 'NORMAL';
+    if (mode === 'BORDER' || mode === 'PSEUDO_INPUT' || mode === 'MARKER_INPUT' || mode === 'MARKER_SEQUENCE') mode = 'NORMAL';
     pseudoInput = null;
     customMarkerInput = null;
     pseudoMessage = '';
@@ -640,11 +640,13 @@
   export function finishMarkerInput() {
     if (markerStart) {
       applyDocument(pruneArrows(snapshot().document));
-      history.record(markerStart, snapshot());
+      const after = snapshot();
+      if (JSON.stringify(markerStart.document) !== JSON.stringify(after.document)) history.record(markerStart, after);
     }
     markerStart = null;
     markerSlotId = undefined;
     markerBuffer = '';
+    if (mode === 'MARKER_SEQUENCE') mode = 'NORMAL';
   }
 
   function handleMarkerKey(event: KeyboardEvent, winner: Candidate): boolean {
@@ -672,7 +674,8 @@
       settleCursor();
     }
     markerBuffer = result.buffer;
-    if (!markerBuffer) finishMarkerInput();
+    if (markerBuffer) mode = 'MARKER_SEQUENCE';
+    else finishMarkerInput();
     return true;
   }
 
@@ -707,7 +710,8 @@
   }
 
   export function resolveKeydown(event: KeyboardEvent): Resolution {
-    return resolveInput(event, { mode: mode as InputMode, buffer: mode === 'FORM' ? formSession?.buffer : markerBuffer });
+    return resolveInput(event, { mode: mode as InputMode,
+      buffer: mode === 'FORM' ? formSession?.buffer : mode === 'MARKER_SEQUENCE' ? markerBuffer : undefined });
   }
 
   export function handleKeydown(event: KeyboardEvent, resolved = resolveKeydown(event)) {
@@ -721,19 +725,19 @@
       return;
     }
     const winner = resolved.winner;
+    if (mode === 'MARKER_SEQUENCE' && resolved.interpretedAsNormal) finishMarkerInput();
     if (!winner) {
-      if (mode === 'NORMAL' && !isModifierInput(event)) finishMarkerInput();
       if (mode === 'FORM' || mode === 'BORDER') event.preventDefault();
       return;
     }
     event.preventDefault();
     if (winner.source === 'sequence') {
-      if (mode === 'NORMAL') handleMarkerKey(event, winner);
+      if (mode === 'NORMAL' || mode === 'MARKER_SEQUENCE') handleMarkerKey(event, winner);
       else if (mode === 'FORM' && formSession && !isRepeatedInput(event)) formSession = { ...formSession, buffer: winner.buffer! };
       return;
     }
     const operation = winner.operation as KeyboardOperationId;
-    finishMarkerInput();
+    if (mode === 'MARKER_SEQUENCE') finishMarkerInput();
     if (mode === 'FORM') {
       if (operation.startsWith('cursor.')) finishFormEditing();
       else {
@@ -970,7 +974,8 @@
   }
 
   export function getInputMode(): EntryInputMode {
-    return mode === 'INSERT' || mode === 'TRANSLATION' || mode === 'PSEUDO_INPUT' || mode === 'MARKER_INPUT' || mode === 'FORM' ? mode : null;
+    return mode === 'INSERT' || mode === 'TRANSLATION' || mode === 'PSEUDO_INPUT' || mode === 'MARKER_INPUT'
+      || mode === 'MARKER_SEQUENCE' || mode === 'FORM' ? mode : null;
   }
 
 </script>
@@ -1075,6 +1080,8 @@
         <p class="selection-guide">疑似トークン: {keyLabel('pseudo.commit')} で確定 / {keyLabel('editor.cancel')}・入力欄から離れると取消（再編集は空文字で削除。関連する下線も削除されます）</p>
       {:else if mode === 'MARKER_INPUT'}
         <p class="selection-guide">標識の自由入力: {keyLabel('marker.customCommit')} で確定 / {keyLabel('editor.cancel')}・入力欄から離れると取消（空文字で削除）</p>
+      {:else if mode === 'MARKER_SEQUENCE'}
+        <p class="selection-guide">定型標識入力: 続きを入力 / 移動・{keyLabel('editor.cancel')} で確定して Normal</p>
       {:else if mode === 'FORM'}
         <p class="selection-guide">formモード: {formInputGuide} ・ {keyLabel('form.commit')} / {keyLabel('editor.cancel')} で確定 / 移動キー・{keyLabel('entry.next')}/{keyLabel('entry.previous')} で確定して移動 / {keyLabel('form.clear')} で即時削除 / {keyLabel('form.eraseInput')} で入力を戻す（Dは左右別、T・基礎下線は1つ）</p>
       {/if}

@@ -23,6 +23,7 @@
   onDestroy(unsubscribeBindings);
   $: markerBindings = sequenceBindings<MarkerId>('marker', bindingSettings);
   $: keyLabel = (operation: import('./keyboardOperations').KeyboardOperationId, separator = ' / ') => { bindingSettings; return operationKeyLabel(operation, separator); };
+  const modeLabel = (mode: string) => mode === 'MARKER_SEQUENCE' ? '定型標識入力' : mode;
   function openSettings() { finishEditing(); closeEntryMenu(false); settingsOpen = true; }
 
   const storageKey = 'IndexedDB: kiri-kyo-editor';
@@ -191,8 +192,9 @@
   }
 
   function moveEntry(direction: -1 | 1) {
-    // FORM commits even at the first/last entry, before checking the destination.
+    // Input commits even at the first/last entry, before checking the destination.
     currentEditor()?.finishFormEditing();
+    currentEditor()?.finishMarkerInput?.();
     const index = entries.findIndex((entry) => entry.id === activeEntryId);
     const target = entries[index + direction];
     if (!target) return;
@@ -396,6 +398,7 @@
     const shortcut = candidate === 'entry.next' || candidate === 'entry.previous' || candidate === 'entry.reorderDown' || candidate === 'entry.reorderUp' ? candidate : undefined;
     if (shortcut) {
       event.preventDefault();
+      if (resolved.interpretedAsNormal || editor.getInputMode() === 'MARKER_SEQUENCE') editor.finishMarkerInput();
       if (matchesKeyboardInput(event, [
         { repeat: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, isComposing: null },
       ]) && (shortcut === 'entry.reorderDown' || shortcut === 'entry.reorderUp')) return;
@@ -491,7 +494,7 @@
   <header class="topbar">
     <h1>英文構造図エディタ</h1>
     <button type="button" on:click={openSettings}>キーバインド設定</button>
-    <div class="mode">{entries.findIndex((entry) => entry.id === activeEntryId) + 1} / {entries.length} · {activeState?.mode ?? 'NORMAL'}</div>
+    <div class="mode">{entries.findIndex((entry) => entry.id === activeEntryId) + 1} / {entries.length} · {modeLabel(activeState?.mode ?? 'NORMAL')}</div>
   </header>
 
   {#if settingsError}<p role="alert">{settingsError}</p>{/if}
@@ -521,7 +524,7 @@
   <details class="marker-guide" on:toggle={finishMarkerInput}>
     <summary>標識の入力（Normal モード）</summary>
     <div class="marker-bindings">{#each markerBindings as binding}<span><kbd>{binding.sequence}</kbd> → {markerLabel(binding.value)}</span>{/each}</div>
-    <p>続けて入力すると標識を更新します。移動・{keyLabel('editor.cancel')} で区切り、{keyLabel('marker.clear')} で削除します。</p>
+    <p>先頭文字から定型標識入力に切り替わります。移動・{keyLabel('editor.cancel')} で確定して Normal に戻り、Normal の {keyLabel('marker.clear')} で削除します。</p>
   </details>
 
   {#if ready}

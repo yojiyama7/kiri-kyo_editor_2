@@ -5,9 +5,9 @@ import { DEFAULT_MARKER_INPUT_BINDINGS, DEFAULT_FORM_INPUT_BINDINGS, DEFAULT_OPE
 
 export type OperationId = Exclude<KeyboardOperationId, 'translation.blockTab'> | MarkerId | FormId;
 export type InputMode = 'NORMAL' | 'VISUAL' | 'VISUAL_MULTI' | 'ARROW' | 'BORDER' | 'FORM'
-  | 'INSERT' | 'TRANSLATION' | 'PSEUDO_INPUT' | 'MARKER_INPUT' | 'DIALOG' | 'MENU';
+  | 'INSERT' | 'TRANSLATION' | 'PSEUDO_INPUT' | 'MARKER_INPUT' | 'MARKER_SEQUENCE' | 'DIALOG' | 'MENU';
 export const INPUT_MODES: readonly InputMode[] = ['NORMAL', 'VISUAL', 'VISUAL_MULTI', 'ARROW', 'BORDER', 'FORM',
-  'INSERT', 'TRANSLATION', 'PSEUDO_INPUT', 'MARKER_INPUT', 'DIALOG', 'MENU'];
+  'INSERT', 'TRANSLATION', 'PSEUDO_INPUT', 'MARKER_INPUT', 'MARKER_SEQUENCE', 'DIALOG', 'MENU'];
 export type KeyStroke = { kind: 'key'; key: string; code?: string; ctrl: boolean; alt: boolean; meta: boolean; shift: boolean };
 export type Binding = KeyStroke | { kind: 'sequence'; sequence: string };
 export type BindingSettings = { version: 1; bindings: Record<OperationId, Binding[]> };
@@ -18,16 +18,16 @@ const definitions: OperationDefinition[] = [];
 function add(category: number, modes: readonly InputMode[], values: Partial<Record<OperationId, string>>) {
   for (const [id, label] of Object.entries(values)) definitions.push({ id: id as OperationId, label, category, modes, sequence: false });
 }
-add(1, [...navigation, 'INSERT', 'TRANSLATION', 'PSEUDO_INPUT', 'MARKER_INPUT'], { 'editor.cancel': '編集の終了・取消' });
+add(1, [...navigation, 'INSERT', 'TRANSLATION', 'PSEUDO_INPUT', 'MARKER_INPUT', 'MARKER_SEQUENCE'], { 'editor.cancel': '編集の終了・取消' });
 add(1, ['DIALOG', 'MENU'], { 'dialog.cancel': 'ダイアログ・メニューを閉じる' });
-add(2, [...navigation, 'MENU'], { 'cursor.left': '左へ移動', 'cursor.right': '右へ移動', 'cursor.up': '上へ移動',
+add(2, [...navigation, 'MARKER_SEQUENCE', 'MENU'], { 'cursor.left': '左へ移動', 'cursor.right': '右へ移動', 'cursor.up': '上へ移動',
   'cursor.down': '下へ移動', 'cursor.rowStart': '行頭へ移動', 'cursor.rowEnd': '行末へ移動' });
 // BORDER has no vertical navigation; MENU has no horizontal navigation.
 for (const definition of definitions) {
   if (['cursor.up', 'cursor.down'].includes(definition.id)) definition.modes = definition.modes.filter(mode => mode !== 'BORDER');
   if (['cursor.left', 'cursor.right'].includes(definition.id)) definition.modes = definition.modes.filter(mode => mode !== 'MENU');
 }
-add(2, [...navigation, 'TRANSLATION'], { 'entry.next': '次の組', 'entry.previous': '前の組' });
+add(2, [...navigation, 'TRANSLATION', 'MARKER_SEQUENCE'], { 'entry.next': '次の組', 'entry.previous': '前の組' });
 add(2, ['DIALOG'], { 'focus.next': '次の項目へ', 'focus.previous': '前の項目へ' });
 add(3, edit, { 'history.undo': '元に戻す', 'history.redo': 'やり直す' });
 add(4, ['FORM'], { 'form.commit': 'formを確定', 'form.clear': 'formを削除', 'form.eraseInput': 'form入力を1文字戻す' });
@@ -38,7 +38,7 @@ add(4, ['ARROW'], { 'arrow.commit': '矢印を確定' });
 add(4, ['VISUAL', 'VISUAL_MULTI'], { 'selection.commit': '選択から下線を作成' });
 add(4, ['NORMAL', 'VISUAL', 'VISUAL_MULTI'], { 'selection.toggle': '選択を開始・追加・解除' });
 add(4, ['NORMAL'], { 'marker.clear': '標識を削除' });
-for (const [id, label] of Object.entries(MARKER_LABELS)) definitions.push({ id: id as MarkerId, label: `標識 ${label}`, category: 5, modes: ['NORMAL'], sequence: true });
+for (const [id, label] of Object.entries(MARKER_LABELS)) definitions.push({ id: id as MarkerId, label: `標識 ${label}`, category: 5, modes: ['NORMAL', 'MARKER_SEQUENCE'], sequence: true });
 for (const [id, label] of Object.entries(FORM_LABELS)) definitions.push({ id: id as FormId, label: `form ${label}`, category: 5, modes: ['FORM'], sequence: true });
 add(6, ['NORMAL'], { 'form.start': 'form入力を開始', 'border.start': '境目モードを開始', 'marker.customStart': '標識の自由入力を開始',
   'arrow.start': '矢印作成を開始', 'arrow.delete': '矢印を削除', 'split.t': 'T化', 'split.d': 'D分割',
@@ -166,17 +166,28 @@ export function saveSettings(storage: Pick<Storage, 'setItem'>, settings: Bindin
 }
 export type InputContext = { mode: InputMode; buffer?: string };
 export type Candidate = { operation: OperationId; source: 'key' | 'sequence'; buffer?: string; complete?: boolean; hasLonger?: boolean; restarted?: boolean };
-export type Resolution = { candidates: Candidate[]; winner?: Candidate };
+export type Resolution = { candidates: Candidate[]; winner?: Candidate; interpretedAsNormal: boolean };
 export function resolveInput(input: KeyboardInput, context: InputContext, settings = getSettings()): Resolution {
-  if (isComposingInput(input)) return { candidates: [] };
+  if (isComposingInput(input)) return { candidates: [], interpretedAsNormal: false };
+  if (context.mode === 'MARKER_SEQUENCE' && input.repeat && input.key && [...input.key].length === 1
+    && !input.ctrlKey && !input.altKey && !input.metaKey) return { candidates: [], interpretedAsNormal: false };
   const allowed = OPERATIONS.filter(op => op.modes.includes(context.mode));
   const candidates: Candidate[] = allowed.filter(op => !op.sequence && settings.bindings[op.id].some(b => b.kind === 'key' && keyMatches(input, b)))
     .map(op => ({ operation: op.id, source: 'key' }));
   if (input.key && [...input.key].length === 1 && !input.ctrlKey && !input.altKey && !input.metaKey && (context.mode !== 'FORM' || !captureKey(input)?.shift)) {
     const sequences = allowed.filter(op => op.sequence).flatMap(op => settings.bindings[op.id]
       .filter((b): b is Extract<Binding, { kind: 'sequence' }> => b.kind === 'sequence').map(b => ({ ...b, operation: op.id })));
-    const continuation = (context.buffer ?? '') + input.key;
-    const buffer = sequences.some(b => b.sequence.startsWith(continuation)) ? continuation : input.key;
+    const continuation = (context.mode === 'NORMAL' ? '' : context.buffer ?? '') + input.key;
+    const canContinue = sequences.some(b => b.sequence.startsWith(continuation));
+    if (context.mode === 'MARKER_SEQUENCE' && !canContinue) {
+      if (candidates.length === 0) {
+        const normal = resolveInput(input, { mode: 'NORMAL' }, settings);
+        return { ...normal, interpretedAsNormal: true };
+      }
+      candidates.sort((a, b) => compareOperations(a.operation, b.operation));
+      return { candidates, winner: candidates[0], interpretedAsNormal: false };
+    }
+    const buffer = canContinue ? continuation : input.key;
     const matches = sequences.filter(b => b.sequence.startsWith(buffer));
     const complete = matches.filter(b => b.sequence === buffer);
     // A prefix is a parsing state, not a competing execution. Keep all future
@@ -188,7 +199,7 @@ export function resolveInput(input: KeyboardInput, context: InputContext, settin
       restarted: !!context.buffer && buffer !== continuation, complete: complete.length > 0, hasLonger: matches.some(b => b.sequence !== buffer) })));
   }
   candidates.sort((a, b) => compareOperations(a.operation, b.operation));
-  return { candidates, winner: candidates[0] };
+  return { candidates, winner: candidates[0], interpretedAsNormal: false };
 }
 export type BindingConflict = { mode: InputMode; buffer: string; input: string; operations: OperationId[]; winner: OperationId; affectedSequences: string[] };
 export function findConflicts(settings: BindingSettings): BindingConflict[] {
@@ -202,14 +213,19 @@ export function findConflicts(settings: BindingSettings): BindingConflict[] {
     const remember = (input: KeyboardInput) => inputs.set(JSON.stringify(input), input);
     for (const sequence of sequences) {
       const chars = [...sequence]; let prefix = '';
-      for (const char of chars) { buffers.add(prefix); remember({ key: char }); prefix += char; }
-      buffers.add(prefix);
+      for (const char of chars) {
+        if (mode === 'FORM' || mode === 'MARKER_SEQUENCE' && prefix
+          && sequences.some(candidate => candidate !== prefix && candidate.startsWith(prefix))) buffers.add(prefix);
+        remember({ key: char }); prefix += char;
+      }
+      if (mode === 'FORM') buffers.add(prefix);
     }
     for (const op of allowed) for (const b of settings.bindings[op.id]) if (b.kind === 'key') {
       remember({ key: b.key, code: b.code, ctrlKey: b.ctrl, altKey: b.alt, metaKey: b.meta, shiftKey: b.shift });
     }
     for (const buffer of buffers) for (const input of inputs.values()) {
       const result = resolveInput(input, { mode, buffer }, settings);
+      if (mode === 'MARKER_SEQUENCE' && (buffer === '' || result.interpretedAsNormal)) continue;
       const operations = [...new Set(result.candidates.map(c => c.operation))];
       if (operations.length < 2) continue;
       const label = bindingLabel(captureKey(input)!);
@@ -218,7 +234,7 @@ export function findConflicts(settings: BindingSettings): BindingConflict[] {
       seen.add(signature);
       const sequenceCandidate = result.candidates.find(c => c.source === 'sequence');
       conflicts.push({ mode, buffer, input: label, operations, winner: result.winner!.operation,
-        affectedSequences: sequenceCandidate ? sequences.filter(s => s.startsWith(sequenceCandidate.buffer!)) : [] });
+        affectedSequences: sequenceCandidate ? [...new Set(sequences.filter(s => s.startsWith(sequenceCandidate.buffer!)))] : [] });
     }
   }
   return conflicts;
