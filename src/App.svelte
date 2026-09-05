@@ -198,6 +198,7 @@
     const index = entries.findIndex((entry) => entry.id === activeEntryId);
     const target = entries[index + direction];
     if (!target) return;
+    currentEditor()?.settleGroupsBeforeEntryMove();
     activate(target.id);
     currentEditor()?.selectFirst();
     void scrollToActive(true);

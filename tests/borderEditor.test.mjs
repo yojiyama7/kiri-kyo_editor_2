@@ -11,6 +11,7 @@ import { computeLayout, slotPosition, selectSlotRange, toggleSlotSelection } fro
 import { entryShortcut } from '../src/entryShortcuts.ts';
 import { matchesKeyboardInput } from '../src/keyboard.ts';
 import { resolveKeyboardOperation } from '../src/keyboardOperations.ts';
+import { createExampleDocument } from '../src/example.ts';
 import ts from 'typescript';
 
 // Exercise the component's actual exported handlers without a browser or real
@@ -93,7 +94,7 @@ function setup(initial = initialDocument()) {
       if (next) api.restore(next);
     },
   };
-  for (const name of ['snapshot', 'restore', 'resolveKeydown', 'handleKeydown', 'finishEditing', 'canSave', 'finishFormEditing', 'startInput', 'getInputMode', 'selectFirst', 'clickSlotId', 'finishMarkerInput', 'setSelectionForTest']) {
+  for (const name of ['snapshot', 'restore', 'resolveKeydown', 'handleKeydown', 'finishEditing', 'canSave', 'finishFormEditing', 'startInput', 'getInputMode', 'selectFirst', 'clickSlotId', 'finishMarkerInput', 'settleGroupsBeforeEntryMove', 'setSelectionForTest']) {
     Object.defineProperty(props, name, { set(value) { api[name] = value; } });
   }
   // Access body to force the lazy synchronous server render.
@@ -352,6 +353,47 @@ test('app Ctrl+n/p follows native key repeats one entry at a time and clamps at 
       assert.equal(editors[expected].display().mode, 'NORMAL');
     }
   }
+});
+
+test('app Ctrl+n/p settles an empty composite before leaving, but not at a boundary or with a marker', () => {
+  function opened(marked = false) {
+    const editor = setup(createExampleDocument());
+    const group = editor.api.snapshot().document.groups[0];
+    editor.api.clickSlotId(group.slotId);
+    editor.key('k');
+    assert.equal(editor.api.snapshot().document.groups[0].kind, 'composite');
+    if (marked) {
+      editor.key('s');
+      editor.api.finishMarkerInput();
+    }
+    return editor;
+  }
+
+  for (const [key, sourceIndex] of [['n', 0], ['p', 1]]) {
+    const source = opened();
+    const other = setup();
+    const editors = sourceIndex === 0 ? [source, other] : [other, source];
+    const router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation,
+      editors.map(editor => editor.api), sourceIndex);
+    router.handleKeydown({ key, target: null, ctrlKey: true, preventDefault() {} });
+    assert.equal(source.api.snapshot().document.groups[0].kind, 'basic');
+    source.key('u');
+    assert.equal(source.api.snapshot().document.groups[0].kind, 'composite');
+    source.key('r', { ctrlKey: true });
+    assert.equal(source.api.snapshot().document.groups[0].kind, 'basic');
+  }
+
+  const marked = opened(true);
+  let router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation,
+    [marked.api, setup().api], 0);
+  router.handleKeydown({ key: 'n', target: null, ctrlKey: true, preventDefault() {} });
+  assert.equal(marked.api.snapshot().document.groups[0].kind, 'composite');
+
+  const boundary = opened();
+  router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation,
+    [setup().api, boundary.api], 1);
+  router.handleKeydown({ key: 'n', target: null, ctrlKey: true, preventDefault() {} });
+  assert.equal(boundary.api.snapshot().document.groups[0].kind, 'composite');
 });
 
 test('app suppresses repeated Alt+j/k reorder in NORMAL mode', () => {

@@ -1,5 +1,5 @@
 import { isSavedState, type SavedState } from './model.ts';
-import { readSavedDocument, settleBasicGroups } from './groupEditing.ts';
+import { readSavedDocument } from './groupEditing.ts';
 import type { Cursor } from './layout.ts';
 import type { EditorSnapshot } from './history.ts';
 import type { EntryInputMode } from './entryShortcuts.ts';
@@ -20,6 +20,7 @@ export type EntryEditorHandle = {
   finishEditing(): void;
   finishFormEditing(): void;
   finishMarkerInput(): void;
+  settleGroupsBeforeEntryMove(): void;
   selectFirst(): void;
   startInput(translationInput?: boolean): void;
   getInputMode(): EntryInputMode;
@@ -125,14 +126,6 @@ export function reorderEntry(state: DocumentSnapshot, id: string, direction: -1 
   const target = index + direction;
   if (index < 0 || target < 0 || target >= state.document.entries.length) return state;
   const entries = [...state.document.entries];
-  let cursor = state.cursor;
-  // Reordering the active entry ends any temporary basic-underline interior
-  // edit even though its cursor moves with the entry on screen.
-  if (id === state.activeEntryId) {
-    const settled = settleBasicGroups(entries[index].document, cursor, null, true);
-    entries[index] = { ...entries[index], document: settled.document };
-    cursor = settled.cursor;
-  }
   [entries[index], entries[target]] = [entries[target], entries[index]];
-  return { ...state, document: { version: 7, entries }, cursor };
+  return { ...state, document: { version: 7, entries } };
 }

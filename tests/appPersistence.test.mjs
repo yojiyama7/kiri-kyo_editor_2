@@ -40,7 +40,7 @@ function setup() {
   const states = Object.fromEntries(initial.map(value => [value.id, { document: structuredClone(value.document), blocked: false }]));
   const editors = Object.fromEntries(initial.map(value => [value.id, {
     finishEditing() { states[value.id].blocked = false; },
-    finishFormEditing() {}, selectFirst() {},
+    finishFormEditing() {}, settleGroupsBeforeEntryMove() {}, selectFirst() {},
     snapshot() { return { document: structuredClone(states[value.id].document), cursor: { x: 0, y: 0 } }; },
     restore(snapshot) { states[value.id].document = structuredClone(snapshot.document); },
     canSave() { return !states[value.id].blocked; },

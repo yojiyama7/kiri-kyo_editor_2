@@ -958,6 +958,16 @@
     enterNormal();
   }
 
+  export function settleGroupsBeforeEntryMove() {
+    const before = snapshot();
+    const result = settleBasicGroups(before.document, before.cursor, null, true);
+    if (result.document === before.document) return;
+    groups = result.document.groups;
+    cursorX = result.cursor.x;
+    cursorY = result.cursor.y;
+    history.record(before, snapshot());
+  }
+
   export function selectFirst() {
     const cursor = nearestCursor(computeLayout(tokens, groups, splits, arrows), { x: 0, y: 0 });
     cursorX = cursor.x;
