@@ -10,6 +10,7 @@
   import { createEditorUpdates } from './editorUpdates';
   import { createEntryPersistence, LEGACY_STORAGE_KEY, RECOVERY_PREFIX, type PersistenceStatus } from './entryPersistence';
   import { createPersistenceClient } from './persistenceClient';
+  import { scheduleEscapeFocusRelease } from './focusRelease';
   import {
     createEntry, insertEntry, insertEnglishEntries, parseEnglishLines, removeEntry, reorderEntry, withEntrySnapshot,
     type Entry, type EntryDocument, type DocumentSnapshot, type EntryEditorState, type EntryEditorHandle,
@@ -469,7 +470,8 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} on:blur={finishMarkerInput}
+<svelte:window on:keydown|capture={(event) => { scheduleEscapeFocusRelease(event, document); }}
+  on:keydown={handleKeydown} on:blur={finishMarkerInput}
   on:beforeunload={flushBeforeLeaving} on:pagehide={flushBeforeLeaving}
   on:pointerdown={(event) => {
     if (!(event.target instanceof Element) || !event.target.closest('.entry-menu')) closeEntryMenu();
