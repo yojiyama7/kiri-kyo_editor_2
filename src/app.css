@@ -179,10 +179,6 @@ input.custom-marker-input { position: absolute; z-index: 4; }
 .split-measure { position: absolute; display: flex; }
 .split-half-measure { display: flex; flex-direction: column; align-items: flex-start; width: max-content; min-width: 16px; }
 .slot-marker { display: block; padding: 0 3px; font: 24px/28px ui-monospace, monospace; text-align: center; white-space: nowrap; color: var(--annotation-color); }
-.marker-guide { margin-top: 10px; font-size: 12px; color: #555; }
-.marker-guide summary { cursor: pointer; width: fit-content; }
-.marker-bindings { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 10px; }
-.marker-bindings span { white-space: nowrap; }
 .slot-marker.marker-pending { color: #777; }
 /* Draw the underline in the gap between its own slot and the slots it contains. */
 .line-segment::before { content: ''; position: absolute; top: -5px; left: 0; right: 0; height: 2px; background: var(--annotation-color); }

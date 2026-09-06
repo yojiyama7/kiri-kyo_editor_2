@@ -1,13 +1,11 @@
 <script lang="ts">
   import KeybindingSettings from './KeybindingSettings.svelte';
-  import { loadSettings, getSettings, subscribeSettings, resolveInput, sequenceBindings, operationMatches, type BindingSettings } from './keybindings';
+  import { loadSettings, getSettings, subscribeSettings, resolveInput, operationMatches, type BindingSettings } from './keybindings';
   import { matchesKeyboardInput } from './keyboard';
   import { onMount, onDestroy, tick } from 'svelte';
   import EntryEditor from './EntryEditor.svelte';
   import { createExampleDocument } from './example';
   import { EditHistory, type EditorSnapshot } from './history';
-  import { markerLabel, type MarkerId } from './markers';
-  import { operationKeyLabel } from './keybindings';
   import { createEditorUpdates } from './editorUpdates';
   import { createEntryPersistence, LEGACY_STORAGE_KEY, RECOVERY_PREFIX, type PersistenceStatus } from './entryPersistence';
   import { createPersistenceClient } from './persistenceClient';
@@ -21,8 +19,6 @@
   let bindingSettings: BindingSettings = getSettings();
   const unsubscribeBindings = subscribeSettings(value => { bindingSettings = value; });
   onDestroy(unsubscribeBindings);
-  $: markerBindings = sequenceBindings<MarkerId>('marker', bindingSettings);
-  $: keyLabel = (operation: import('./keyboardOperations').KeyboardOperationId, separator = ' / ') => { bindingSettings; return operationKeyLabel(operation, separator); };
   const modeLabel = (mode: string) => mode === 'MARKER_SEQUENCE' ? '定型標識入力' : mode;
   function openSettings() { finishEditing(); closeEntryMenu(false); settingsOpen = true; }
 
@@ -507,12 +503,6 @@
       <button type="button" on:click={() => { legacyDiscarded = false; }}>閉じる</button>
     </p>
   {/if}
-  <details class="marker-guide" on:toggle={finishMarkerInput}>
-    <summary>標識の入力（Normal モード）</summary>
-    <div class="marker-bindings">{#each markerBindings as binding}<span><kbd>{binding.sequence}</kbd> → {markerLabel(binding.value)}</span>{/each}</div>
-    <p>{keyLabel('marker.start')} で明示的に、または先頭文字から定型標識入力に切り替わります。移動・{keyLabel('editor.cancel')} で確定して Normal に戻り、Normal の {keyLabel('marker.clear')} で削除します。</p>
-  </details>
-
   {#if ready}
     <div class="entries">
       {#each entries as entry, index (entry.id)}
