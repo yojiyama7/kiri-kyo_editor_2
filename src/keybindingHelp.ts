@@ -17,6 +17,12 @@ export const MODE_ABBREVIATIONS: Record<InputMode, string> = {
   MARKER_SEQUENCE: 'MS', DIALOG: 'D', MENU: 'M',
 };
 
+export const MODE_NAMES: Record<InputMode, string> = {
+  NORMAL: 'normal', VISUAL: 'visual', VISUAL_MULTI: 'visual multi', ARROW: 'arrow', BORDER: 'border', FORM: 'form',
+  INSERT: 'insert', TRANSLATION: 'translation', PSEUDO_INPUT: 'pseudo input', MARKER_INPUT: 'marker input',
+  MARKER_SEQUENCE: 'marker sequence', DIALOG: 'dialog', MENU: 'menu',
+};
+
 export const MODE_DESCRIPTIONS: Record<InputMode, string> = {
   NORMAL: '英文の単語・疑似トークン・下線を選び、標識の入力や各種編集を開始できる通常の状態です。',
   VISUAL: '現在位置から連続する範囲を選び、複数の要素をまとめた下線の作成対象にするモードです。',

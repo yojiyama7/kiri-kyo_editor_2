@@ -6,7 +6,7 @@
   import EntryEditor from './EntryEditor.svelte';
   import { createExampleDocument } from './example';
   import { EditHistory, type EditorSnapshot } from './history';
-  import { MODE_ABBREVIATIONS, MODE_HELP } from './keybindingHelp';
+  import { MODE_ABBREVIATIONS, MODE_NAMES } from './keybindingHelp';
   import { createEditorUpdates } from './editorUpdates';
   import { createEntryPersistence, LEGACY_STORAGE_KEY, RECOVERY_PREFIX, type PersistenceStatus } from './entryPersistence';
   import { createPersistenceClient } from './persistenceClient';
@@ -497,9 +497,9 @@
     <button type="button" on:click={openSettings}>キーバインド設定</button>
   </header>
 
-  <div class="mode-badge" role="status" aria-live="polite" aria-label={`現在のモード: ${MODE_HELP[activeMode]}`}>
+  <div class="mode-badge" role="status" aria-live="polite" aria-label={`現在のモード: ${MODE_NAMES[activeMode]}`}>
     <span class="mode-badge-icon" aria-hidden="true">{MODE_ABBREVIATIONS[activeMode]}</span>
-    <span class="mode-badge-name">{MODE_HELP[activeMode]}</span>
+    <span class="mode-badge-name">{MODE_NAMES[activeMode]}</span>
   </div>
 
   {#if settingsError}<p role="alert">{settingsError}</p>{/if}

@@ -62,7 +62,7 @@ test('the floating mode badge uses shared icons and full names without the entry
   const css = readFileSync(new URL('../src/app.css', import.meta.url), 'utf8');
   assert.match(app, /class="mode-badge"/);
   assert.match(app, /MODE_ABBREVIATIONS\[activeMode\]/);
-  assert.match(app, /MODE_HELP\[activeMode\]/);
+  assert.match(app, /MODE_NAMES\[activeMode\]/);
   assert.doesNotMatch(app, /entries\.findIndex\(.*activeEntryId.*entries\.length/);
   assert.match(css, /\.mode-badge \{[^}]*position: fixed;[^}]*border-radius: 999px;[^}]*box-shadow:/s);
   assert.match(css, /\.mode-badge-icon \{[^}]*width: 18px;[^}]*height: 18px;[^}]*border-radius: 50%;/s);
