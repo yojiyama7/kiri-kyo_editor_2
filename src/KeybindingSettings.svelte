@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { INPUT_MODES, SETTINGS_OPERATIONS, getSettings, defaultSettings, captureKey, bindingLabel, validateSettings, findConflicts,
-    operationDefinition, saveSettings, isComposingInput, type Binding, type InputMode, type OperationDefinition, type OperationId } from './keybindings';
+    operationDefinition, saveSettings, isComposingInput, type Binding, type BindingSettings, type InputMode, type OperationDefinition, type OperationId } from './keybindings';
   import { MODE_ABBREVIATIONS, MODE_DESCRIPTIONS, MODE_HELP, operationHelp } from './keybindingHelp';
   import { lockDocumentScroll } from './documentScroll';
   export let onclose: () => void;
@@ -25,11 +25,11 @@
   function isFixedEscape(binding: Binding): boolean {
     return binding.kind === 'key' && binding.key === 'Escape' && !binding.ctrl && !binding.alt && !binding.meta && !binding.shift && !binding.code;
   }
-  function editableBindings(id: OperationId): Binding[] {
-    return draft.bindings[id].filter(binding => !isFixedEscape(binding));
+  function editableBindings(id: OperationId, settings: BindingSettings): Binding[] {
+    return settings.bindings[id].filter(binding => !isFixedEscape(binding));
   }
   function setSlot(id: OperationId, index: number, binding?: Binding): number | undefined {
-    const current = editableBindings(id);
+    const current = editableBindings(id, draft);
     let actualIndex: number | undefined;
     if (binding) {
       actualIndex = Math.min(index, current.length);
@@ -86,7 +86,7 @@
     if (outside) closeDialog();
   }
   function assignmentSummary(operation: OperationDefinition): string {
-    const labels = editableBindings(operation.id).map(bindingLabel);
+    const labels = editableBindings(operation.id, draft).map(bindingLabel);
     if (operation.category === 1) labels.unshift('Esc（固定）');
     return labels.join(' / ') || '未割り当て';
   }
@@ -176,7 +176,7 @@
                 <span class="help-tooltip" id={`help-summary-${operation.id}`} role="tooltip">{help.summary}</span>
               </div>
               {#each slotIndexes as index}
-                {@const binding = editableBindings(operation.id)[index]}
+                {@const binding = editableBindings(operation.id, draft)[index]}
                 <div class="binding-slot" role="cell">
                   {#if operation.sequence}
                     <input aria-label={`${operation.label} 割り当て${index + 1}`} value={binding?.kind === 'sequence' ? binding.sequence : ''} placeholder="empty"

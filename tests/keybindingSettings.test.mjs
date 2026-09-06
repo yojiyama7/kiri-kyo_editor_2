@@ -38,6 +38,8 @@ function setup() {
 test('settings renders three editable slots without fixed Esc or add/remove buttons', () => {
   const { html } = setup();
   const source = readFileSync(new URL('../src/KeybindingSettings.svelte', import.meta.url), 'utf8');
+  assert.ok(source.includes('{@const binding = editableBindings(operation.id, draft)[index]}'),
+    'binding fields must explicitly depend on draft so Svelte redraws them after recording');
   assert.ok(html.includes('固定優先順位順の操作'));
   assert.ok(html.includes('前提モード'));
   assert.ok(html.includes('通常編集（N）'));
