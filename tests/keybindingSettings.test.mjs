@@ -212,3 +212,13 @@ test('settings scroll unlock does not overwrite a newer scroll policy', () => {
   assert.equal(document.documentElement.style.overflow, '');
   assert.equal(document.body.style.overflow, 'clip');
 });
+
+test('mobile settings scroll the heading, filter, and table header with the whole dialog', () => {
+  const source = readFileSync(new URL('../src/KeybindingSettings.svelte', import.meta.url), 'utf8');
+  const mobile = source.slice(source.indexOf('@media (max-width: 700px)'));
+  assert.ok(mobile.includes('.keybinding-settings { max-height: 90dvh; overflow-y: auto; }'));
+  assert.ok(mobile.includes('.settings-content { display: block; height: auto; overflow: visible; }'));
+  assert.ok(mobile.includes('.binding-list { overflow-x: auto; }'));
+  assert.ok(mobile.includes('.binding-header { position: static; }'));
+  assert.ok(mobile.includes('aside { overflow: visible; border-left: 0; }'));
+});

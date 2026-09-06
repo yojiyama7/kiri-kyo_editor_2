@@ -338,5 +338,12 @@
   .mode-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 0; list-style: none; }
   .mode-list li { display: flex; gap: 5px; align-items: baseline; padding: 5px 8px; border-radius: 5px; background: #f0f3f6; font-size: .8rem; }
   .mode-list span { color: #555; }
-  @media (max-width: 700px) { .settings-content { grid-template-columns: 1fr; grid-template-rows: minmax(0, 2fr) minmax(120px, 1fr); } aside { border-left: 0; } }
+  @media (max-width: 700px) {
+    .keybinding-settings { max-height: 90dvh; overflow-y: auto; }
+    .settings-content { display: block; height: auto; overflow: visible; }
+    .binding-panel { display: block; }
+    .binding-list { overflow-x: auto; }
+    .binding-header { position: static; }
+    aside { overflow: visible; border-left: 0; }
+  }
 </style>
