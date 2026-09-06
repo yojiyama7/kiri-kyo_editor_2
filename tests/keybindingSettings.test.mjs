@@ -40,6 +40,9 @@ test('settings renders three editable slots without fixed Esc or add/remove butt
   const source = readFileSync(new URL('../src/KeybindingSettings.svelte', import.meta.url), 'utf8');
   assert.ok(source.includes('{@const binding = editableBindings(operation.id, draft)[index]}'),
     'binding fields must explicitly depend on draft so Svelte redraws them after recording');
+  assert.equal(source.split('class:recording={recording === `${operation.id}:${index}`}').length - 1, 2,
+    'both shortcut and sequence fields must highlight the active recording slot');
+  assert.match(source, /input\.recording \{[^}]*outline: 3px solid[^}]*background:/s);
   assert.ok(html.includes('固定優先順位順の操作'));
   assert.ok(html.includes('前提モード'));
   assert.ok(html.includes('通常編集（N）'));

@@ -120,7 +120,7 @@
     <h2 id="keybinding-title">キーバインド設定</h2>
     <p>上ほど優先されます。各操作3件まで。Escは設定欄には表示されませんが、取消キーとして常に有効です。競合があっても保存できます。</p>
     <p>入力欄でEscを押すと、その割り当てを解除します。空いた欄は自動的に左詰めされます。</p>
-    <p>キー欄を選んで実際のキーを押してください。標識・formは文字列を入力します。定型標識は開始操作の後、または先頭文字から専用モードに入り、入力に時間制限はありません。</p>
+    <p>キー欄を選んで実際のキーを押してください。入力待ちの欄は入力が終わるまで青く強調されます。標識・formは文字列を入力します。定型標識は開始操作の後、または先頭文字から専用モードに入り、入力に時間制限はありません。</p>
     <p>OS・ブラウザーが先に処理するキーは、アプリへ届かない場合があります。この競合の完全検出はできません。</p>
   </header>
   <div class="settings-content">
@@ -181,6 +181,8 @@
                   {#if operation.sequence}
                     <input aria-label={`${operation.label} 割り当て${index + 1}`} value={binding?.kind === 'sequence' ? binding.sequence : ''} placeholder="empty"
                       data-operation={operation.id} data-slot={index}
+                      class:recording={recording === `${operation.id}:${index}`}
+                      on:focus={() => { recording = `${operation.id}:${index}`; }} on:blur={() => { recording = null; }}
                       on:input={(event) => updateSequence(event, operation.id, index)}
                       on:keydown={(event) => clearSlot(event, operation.id, index)} />
                   {:else}
@@ -307,7 +309,7 @@
   .binding-reset { justify-self: end; }
   input { box-sizing: border-box; width: 100%; padding: 6px; border: 1px solid #aaa; border-radius: 4px; }
   input::placeholder { color: #777; opacity: .55; }
-  input.recording { outline: 2px solid #2672ae; }
+  input.recording { border-color: #1769aa; outline: 3px solid #58a6e7; outline-offset: 1px; background: #eaf5ff; box-shadow: 0 0 0 4px #d5ebfc; }
   button { padding: 6px 9px; cursor: pointer; }
   button:disabled { cursor: default; }
   aside { min-height: 0; overflow: auto; padding: 12px; border-left: 1px solid #ddd; background: #fffaf0; overscroll-behavior: contain; }
