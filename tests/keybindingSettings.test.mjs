@@ -9,13 +9,12 @@ import { lockDocumentScroll } from '../src/documentScroll.ts';
 let Settings;
 before(async () => {
   let source = readFileSync(new URL('../src/KeybindingSettings.svelte', import.meta.url), 'utf8');
-  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'openModeHelp', 'closeModeHelp', 'closeHelpOnBackdrop', 'assignmentSummary', 'operationMatchesFilter', 'modeDescription', 'save', 'close', 'record']) source = source.replace(`  function ${name}(`, `  export function ${name}(`);
+  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'closeHelpOnBackdrop', 'assignmentSummary', 'operationMatchesFilter', 'modeDescription', 'save', 'close', 'record']) source = source.replace(`  function ${name}(`, `  export function ${name}(`);
   source = source.replace('</script>', `
     export function draftForTest() { return { draft, saveError }; }
     export function setDialogForTest(value: HTMLDialogElement) { dialog = value; }
     export function helpForTest() { return selectedHelp; }
     export function setHelpDialogForTest(value: HTMLDialogElement) { helpDialog = value; }
-    export function setModeHelpDialogForTest(value: HTMLDialogElement) { modeHelpDialog = value; }
     export function setModeFilterForTest(value: InputMode | '') { modeFilter = value; }
     export function visibleOperationsForTest() { return SETTINGS_OPERATIONS.filter(operationMatchesFilter); }
   </script>`);
@@ -27,11 +26,10 @@ afterEach(() => { applySettings(defaultSettings()); delete globalThis.localStora
 function setup() {
   const api = {}, events = [];
   const props = { onclose: () => events.push('cancel'), onsaved: () => events.push('save') };
-  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'openModeHelp', 'closeModeHelp', 'closeHelpOnBackdrop', 'assignmentSummary', 'operationMatchesFilter', 'modeDescription', 'save', 'close', 'record', 'draftForTest', 'setDialogForTest', 'helpForTest', 'setHelpDialogForTest', 'setModeHelpDialogForTest', 'setModeFilterForTest', 'visibleOperationsForTest']) Object.defineProperty(props, name, { set(value) { api[name] = value; } });
+  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'closeHelpOnBackdrop', 'assignmentSummary', 'operationMatchesFilter', 'modeDescription', 'save', 'close', 'record', 'draftForTest', 'setDialogForTest', 'helpForTest', 'setHelpDialogForTest', 'setModeFilterForTest', 'visibleOperationsForTest']) Object.defineProperty(props, name, { set(value) { api[name] = value; } });
   const html = render(Settings, { props }).body;
   api.setDialogForTest({ close() { events.push('close'); }, querySelector() {} });
   api.setHelpDialogForTest({ showModal() { events.push('help-open'); }, close() { events.push('help-close'); } });
-  api.setModeHelpDialogForTest({ showModal() { events.push('mode-help-open'); }, close() { events.push('mode-help-close'); } });
   return { api, events, html };
 }
 
@@ -46,18 +44,14 @@ test('settings renders three editable slots without fixed Esc or add/remove butt
   assert.ok(html.includes('固定優先順位順の操作'));
   assert.ok(html.includes('前提モード'));
   assert.ok(html.includes('通常編集（N）'));
-  assert.ok(html.includes('aria-label="モードアイコンの詳細説明"'));
-  assert.ok(html.includes('id="mode-icon-key" role="tooltip"'));
-  assert.equal((html.match(/aria-hidden="true"/g) ?? []).length, 26);
-  assert.ok(html.includes('id="mode-help-title"'));
-  assert.ok(html.includes('各操作を実行できる前提モード'));
+  assert.ok(!html.includes('モードアイコンの説明'));
   assert.ok(html.includes('role="table"'));
   assert.ok(html.includes('キーバインド1'));
   assert.ok(html.includes('キーバインド2'));
   assert.ok(html.includes('キーバインド3'));
   assert.match(source, /\.binding-header, \.binding-row \{[^}]*grid-template-columns: minmax\(185px, 1fr\) 28px repeat\(3, 118px\) max-content/s);
-  assert.equal(html.match(/role="tooltip"/g)?.length, SETTINGS_OPERATIONS.length + 1);
-  assert.equal(html.match(/aria-haspopup="dialog"/g)?.length, SETTINGS_OPERATIONS.length + 1);
+  assert.equal(html.match(/role="tooltip"/g)?.length, SETTINGS_OPERATIONS.length);
+  assert.equal(html.match(/aria-haspopup="dialog"/g)?.length, SETTINGS_OPERATIONS.length);
   assert.ok(source.includes('<h3>何をする操作か</h3>'));
   assert.ok(source.includes('<h3>利用可能なモード</h3>'));
   assert.ok(source.includes('<h3>使い方の例</h3>'));
@@ -78,24 +72,16 @@ test('settings renders three editable slots without fixed Esc or add/remove butt
   assert.ok(!html.includes('>削除<'));
 });
 
-test('mode icon help opens and closes its detailed modal', () => {
-  const { api, events, html } = setup();
-  assert.ok(html.includes('aria-label="モードの詳細説明を閉じる">×</button>'));
-  api.openModeHelp();
-  api.closeModeHelp();
-  assert.deepEqual(events, ['mode-help-open', 'mode-help-close']);
-});
-
 test('help modal closes only when the backdrop outside its bounds is clicked', () => {
   const { api, events } = setup();
   const source = readFileSync(new URL('../src/KeybindingSettings.svelte', import.meta.url), 'utf8');
   assert.ok(source.includes('aria-label="詳細説明を閉じる" on:click={closeHelp}>×</button>'));
   const dialog = { getBoundingClientRect: () => ({ left: 100, right: 500, top: 100, bottom: 400 }) };
-  api.closeHelpOnBackdrop({ target: dialog, currentTarget: dialog, clientX: 300, clientY: 250 }, api.closeModeHelp);
-  api.closeHelpOnBackdrop({ target: {}, currentTarget: dialog, clientX: 50, clientY: 50 }, api.closeModeHelp);
+  api.closeHelpOnBackdrop({ target: dialog, currentTarget: dialog, clientX: 300, clientY: 250 }, api.closeHelp);
+  api.closeHelpOnBackdrop({ target: {}, currentTarget: dialog, clientX: 50, clientY: 50 }, api.closeHelp);
   assert.deepEqual(events, []);
-  api.closeHelpOnBackdrop({ target: dialog, currentTarget: dialog, clientX: 50, clientY: 250 }, api.closeModeHelp);
-  assert.deepEqual(events, ['mode-help-close']);
+  api.closeHelpOnBackdrop({ target: dialog, currentTarget: dialog, clientX: 50, clientY: 250 }, api.closeHelp);
+  assert.deepEqual(events, ['help-close']);
 });
 
 test('mode filter shows operations containing the selected prerequisite mode', () => {

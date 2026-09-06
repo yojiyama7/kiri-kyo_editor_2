@@ -2,13 +2,12 @@
   import { onMount, tick } from 'svelte';
   import { INPUT_MODES, SETTINGS_OPERATIONS, getSettings, defaultSettings, captureKey, bindingLabel, validateSettings, findConflicts,
     operationDefinition, saveSettings, isComposingInput, type Binding, type BindingSettings, type InputMode, type OperationDefinition, type OperationId } from './keybindings';
-  import { MODE_ABBREVIATIONS, MODE_DESCRIPTIONS, MODE_HELP, operationHelp } from './keybindingHelp';
+  import { MODE_ABBREVIATIONS, MODE_HELP, operationHelp } from './keybindingHelp';
   import { lockDocumentScroll } from './documentScroll';
   export let onclose: () => void;
   export let onsaved: () => void;
   let dialog: HTMLDialogElement;
   let helpDialog: HTMLDialogElement;
-  let modeHelpDialog: HTMLDialogElement;
   let selectedHelp: OperationDefinition | null = null;
   let draft = structuredClone(getSettings());
   let saveError = '';
@@ -76,8 +75,6 @@
     helpDialog.close();
     selectedHelp = null;
   }
-  function openModeHelp() { modeHelpDialog.showModal(); }
-  function closeModeHelp() { modeHelpDialog.close(); }
   function closeHelpOnBackdrop(event: MouseEvent, closeDialog: () => void) {
     if (event.target !== event.currentTarget) return;
     const rect = (event.currentTarget as HTMLDialogElement).getBoundingClientRect();
@@ -133,18 +130,6 @@
             <option value={mode}>{MODE_HELP[mode]}（{MODE_ABBREVIATIONS[mode]}）</option>
           {/each}
         </select>
-        <div class="mode-filter-help">
-          <button type="button" class="help-button" aria-label="モードアイコンの詳細説明" aria-describedby="mode-icon-key"
-            aria-haspopup="dialog" on:click={openModeHelp}>?</button>
-          <div class="mode-icon-key" id="mode-icon-key" role="tooltip">
-            <strong>モードアイコン</strong>
-            <ul>
-              {#each INPUT_MODES as mode}
-                <li><span class="mode-icon" aria-hidden="true">{MODE_ABBREVIATIONS[mode]}</span><span>{MODE_HELP[mode]}</span></li>
-              {/each}
-            </ul>
-          </div>
-        </div>
       </div>
       <div class="binding-list" role="table" aria-label="固定優先順位順の操作">
         <div class="binding-header" role="row">
@@ -227,27 +212,6 @@
   </footer>
 </dialog>
 
-<dialog bind:this={modeHelpDialog} class="operation-help mode-help-dialog" aria-labelledby="mode-help-title"
-  on:cancel|preventDefault={closeModeHelp} on:click={(event) => closeHelpOnBackdrop(event, closeModeHelp)} on:keydown|stopPropagation>
-  <div class="operation-help-heading">
-    <h2 id="mode-help-title">モードアイコンの説明</h2>
-    <button type="button" class="operation-help-close" aria-label="モードの詳細説明を閉じる" on:click={closeModeHelp}>×</button>
-  </div>
-  <p class="mode-help-introduction">各操作を実行できる前提モードを示すアイコンです。</p>
-  <ul class="mode-detail-list">
-    {#each INPUT_MODES as mode}
-      <li>
-        <div class="mode-detail-heading">
-          <strong class="mode-icon" aria-hidden="true">{MODE_ABBREVIATIONS[mode]}</strong>
-          <h3>{MODE_HELP[mode]}</h3>
-          <code>{mode}</code>
-        </div>
-        <p>{MODE_DESCRIPTIONS[mode]}</p>
-      </li>
-    {/each}
-  </ul>
-</dialog>
-
 <dialog bind:this={helpDialog} class="operation-help" aria-labelledby="operation-help-title"
   on:cancel|preventDefault={closeHelp} on:click={(event) => closeHelpOnBackdrop(event, closeHelp)} on:keydown|stopPropagation>
   {#if selectedHelp}
@@ -288,11 +252,6 @@
   .binding-filter { display: flex; flex: none; gap: 10px; align-items: center; padding: 10px 16px; border-bottom: 1px solid #bbb; background: #f7f7f7; }
   .binding-filter label { font-size: .85rem; font-weight: 600; }
   .binding-filter select { min-width: 170px; padding: 6px 28px 6px 8px; border: 1px solid #aaa; border-radius: 4px; background: white; }
-  .mode-filter-help { position: relative; z-index: 3; display: flex; }
-  .mode-icon-key { box-sizing: border-box; position: absolute; top: calc(100% + 7px); right: 0; width: min(300px, 80vw); padding: 10px 12px; border: 1px solid #777; border-radius: 5px; background: #222; color: white; font-size: .75rem; line-height: 1.45; box-shadow: 0 3px 10px #0004; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s; }
-  .mode-icon-key ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin: 8px 0 0; padding: 0; list-style: none; }
-  .mode-icon-key li { display: flex; gap: 6px; align-items: center; }
-  .mode-filter-help:hover .mode-icon-key, .mode-filter-help:focus-within .mode-icon-key { opacity: 1; visibility: visible; }
   .binding-list { min-width: 0; min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
   .binding-header, .binding-row { display: grid; grid-template-columns: minmax(185px, 1fr) 28px repeat(3, 118px) max-content; gap: 8px; align-items: center; min-width: 680px; padding: 10px 16px; }
   .binding-header { position: sticky; top: 0; z-index: 1; border-bottom: 1px solid #bbb; background: #eee; color: #555; font-size: .75rem; font-weight: 600; }
@@ -327,14 +286,6 @@
   .operation-help section { margin-top: 18px; }
   .operation-help h3 { margin: 0 0 6px; font-size: .95rem; }
   .operation-help p { margin: 0; line-height: 1.65; }
-  .mode-help-dialog { width: min(680px, 90vw); }
-  .mode-help-introduction { margin-top: 16px !important; }
-  .mode-detail-list { display: grid; gap: 10px; margin: 16px 0 0; padding: 0; list-style: none; }
-  .mode-detail-list li { padding: 10px 12px; border-radius: 6px; background: #f4f6f8; }
-  .mode-detail-heading { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; }
-  .mode-detail-heading h3 { margin: 0; }
-  .mode-detail-heading code { color: #666; font-size: .72rem; }
-  .mode-detail-list p { color: #444; font-size: .85rem; }
   .mode-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 0; list-style: none; }
   .mode-list li { display: flex; gap: 5px; align-items: baseline; padding: 5px 8px; border-radius: 5px; background: #f0f3f6; font-size: .8rem; }
   .mode-list span { color: #555; }
