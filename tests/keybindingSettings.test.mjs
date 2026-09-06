@@ -137,7 +137,7 @@ test('operation help opens and closes independently with the current assignments
   assert.deepEqual(events, ['help-open', 'help-close']);
 });
 
-test('recording captures modified keys and Escape clears and left-packs the selected binding', () => {
+test('recording captures modified keys, ends by blurring, and Escape clears and left-packs the selected binding', () => {
   const { api } = setup(); let prevented = 0, stopped = 0, blurred = 0;
   const event = { key: 'q', metaKey: true, preventDefault() { prevented++; }, stopPropagation() { stopped++; }, currentTarget: { blur() { blurred++; } } };
   api.record(event, 'cursor.left', 0);
@@ -145,7 +145,7 @@ test('recording captures modified keys and Escape clears and left-packs the sele
   api.setSlot('cursor.left', 2, captureKey({ key: 'w' }));
   api.record({ ...event, key: 'Escape', metaKey: false }, 'cursor.left', 1);
   assert.deepEqual(api.draftForTest().draft.bindings['cursor.left'].map(binding => binding.key), ['q', 'w']);
-  assert.equal(prevented, 2); assert.equal(stopped, 2); assert.equal(blurred, 1);
+  assert.equal(prevented, 2); assert.equal(stopped, 2); assert.equal(blurred, 2);
 });
 
 test('sequence fields append from later slots, clear on Escape, and ignore composing Escape', () => {

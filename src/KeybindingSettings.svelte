@@ -103,9 +103,9 @@
     const key = captureKey(event);
     if (!key || event.repeat) return;
     event.preventDefault();
-    const actualIndex = setSlot(id, index, key);
+    setSlot(id, index, key);
     recording = null;
-    if (actualIndex !== index) void focusSlot(id, actualIndex!);
+    (event.currentTarget as HTMLElement).blur();
   }
   function save() {
     try { saveSettings(localStorage, draft); dialog.close(); onsaved(); }
