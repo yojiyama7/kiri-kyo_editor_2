@@ -9,7 +9,7 @@ import { lockDocumentScroll } from '../src/documentScroll.ts';
 let Settings;
 before(async () => {
   let source = readFileSync(new URL('../src/KeybindingSettings.svelte', import.meta.url), 'utf8');
-  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'openModeHelp', 'closeModeHelp', 'assignmentSummary', 'operationMatchesFilter', 'modeDescription', 'save', 'close', 'record']) source = source.replace(`  function ${name}(`, `  export function ${name}(`);
+  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'openModeHelp', 'closeModeHelp', 'closeHelpOnBackdrop', 'assignmentSummary', 'operationMatchesFilter', 'modeDescription', 'save', 'close', 'record']) source = source.replace(`  function ${name}(`, `  export function ${name}(`);
   source = source.replace('</script>', `
     export function draftForTest() { return { draft, saveError }; }
     export function setDialogForTest(value: HTMLDialogElement) { dialog = value; }
@@ -27,7 +27,7 @@ afterEach(() => { applySettings(defaultSettings()); delete globalThis.localStora
 function setup() {
   const api = {}, events = [];
   const props = { onclose: () => events.push('cancel'), onsaved: () => events.push('save') };
-  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'openModeHelp', 'closeModeHelp', 'assignmentSummary', 'operationMatchesFilter', 'modeDescription', 'save', 'close', 'record', 'draftForTest', 'setDialogForTest', 'helpForTest', 'setHelpDialogForTest', 'setModeHelpDialogForTest', 'setModeFilterForTest', 'visibleOperationsForTest']) Object.defineProperty(props, name, { set(value) { api[name] = value; } });
+  for (const name of ['editableBindings', 'setSlot', 'clearSlot', 'updateSequence', 'reset', 'openHelp', 'closeHelp', 'openModeHelp', 'closeModeHelp', 'closeHelpOnBackdrop', 'assignmentSummary', 'operationMatchesFilter', 'modeDescription', 'save', 'close', 'record', 'draftForTest', 'setDialogForTest', 'helpForTest', 'setHelpDialogForTest', 'setModeHelpDialogForTest', 'setModeFilterForTest', 'visibleOperationsForTest']) Object.defineProperty(props, name, { set(value) { api[name] = value; } });
   const html = render(Settings, { props }).body;
   api.setDialogForTest({ close() { events.push('close'); }, querySelector() {} });
   api.setHelpDialogForTest({ showModal() { events.push('help-open'); }, close() { events.push('help-close'); } });
@@ -74,10 +74,23 @@ test('settings renders three editable slots without fixed Esc or add/remove butt
 });
 
 test('mode icon help opens and closes its detailed modal', () => {
-  const { api, events } = setup();
+  const { api, events, html } = setup();
+  assert.ok(html.includes('aria-label="モードの詳細説明を閉じる">×</button>'));
   api.openModeHelp();
   api.closeModeHelp();
   assert.deepEqual(events, ['mode-help-open', 'mode-help-close']);
+});
+
+test('help modal closes only when the backdrop outside its bounds is clicked', () => {
+  const { api, events } = setup();
+  const source = readFileSync(new URL('../src/KeybindingSettings.svelte', import.meta.url), 'utf8');
+  assert.ok(source.includes('aria-label="詳細説明を閉じる" on:click={closeHelp}>×</button>'));
+  const dialog = { getBoundingClientRect: () => ({ left: 100, right: 500, top: 100, bottom: 400 }) };
+  api.closeHelpOnBackdrop({ target: dialog, currentTarget: dialog, clientX: 300, clientY: 250 }, api.closeModeHelp);
+  api.closeHelpOnBackdrop({ target: {}, currentTarget: dialog, clientX: 50, clientY: 50 }, api.closeModeHelp);
+  assert.deepEqual(events, []);
+  api.closeHelpOnBackdrop({ target: dialog, currentTarget: dialog, clientX: 50, clientY: 250 }, api.closeModeHelp);
+  assert.deepEqual(events, ['mode-help-close']);
 });
 
 test('mode filter shows operations containing the selected prerequisite mode', () => {

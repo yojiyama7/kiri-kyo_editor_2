@@ -78,6 +78,13 @@
   }
   function openModeHelp() { modeHelpDialog.showModal(); }
   function closeModeHelp() { modeHelpDialog.close(); }
+  function closeHelpOnBackdrop(event: MouseEvent, closeDialog: () => void) {
+    if (event.target !== event.currentTarget) return;
+    const rect = (event.currentTarget as HTMLDialogElement).getBoundingClientRect();
+    const outside = event.clientX < rect.left || event.clientX > rect.right
+      || event.clientY < rect.top || event.clientY > rect.bottom;
+    if (outside) closeDialog();
+  }
   function assignmentSummary(operation: OperationDefinition): string {
     const labels = editableBindings(operation.id).map(bindingLabel);
     if (operation.category === 1) labels.unshift('Esc（固定）');
@@ -219,10 +226,10 @@
 </dialog>
 
 <dialog bind:this={modeHelpDialog} class="operation-help mode-help-dialog" aria-labelledby="mode-help-title"
-  on:cancel|preventDefault={closeModeHelp} on:keydown|stopPropagation>
+  on:cancel|preventDefault={closeModeHelp} on:click={(event) => closeHelpOnBackdrop(event, closeModeHelp)} on:keydown|stopPropagation>
   <div class="operation-help-heading">
     <h2 id="mode-help-title">モードアイコンの説明</h2>
-    <button type="button" aria-label="モードの詳細説明を閉じる" on:click={closeModeHelp}>閉じる</button>
+    <button type="button" class="operation-help-close" aria-label="モードの詳細説明を閉じる" on:click={closeModeHelp}>×</button>
   </div>
   <p class="mode-help-introduction">各操作を実行できる前提モードを示すアイコンです。</p>
   <ul class="mode-detail-list">
@@ -240,12 +247,12 @@
 </dialog>
 
 <dialog bind:this={helpDialog} class="operation-help" aria-labelledby="operation-help-title"
-  on:cancel|preventDefault={closeHelp} on:keydown|stopPropagation>
+  on:cancel|preventDefault={closeHelp} on:click={(event) => closeHelpOnBackdrop(event, closeHelp)} on:keydown|stopPropagation>
   {#if selectedHelp}
     {@const help = operationHelp(selectedHelp.id)}
     <div class="operation-help-heading">
       <h2 id="operation-help-title">{selectedHelp.label}</h2>
-      <button type="button" aria-label="詳細説明を閉じる" on:click={closeHelp}>閉じる</button>
+      <button type="button" class="operation-help-close" aria-label="詳細説明を閉じる" on:click={closeHelp}>×</button>
     </div>
     <section>
       <h3>何をする操作か</h3>
@@ -313,6 +320,8 @@
   .operation-help::backdrop { background: #0007; }
   .operation-help-heading { display: flex; gap: 16px; align-items: center; justify-content: space-between; border-bottom: 1px solid #ddd; padding-bottom: 12px; }
   .operation-help-heading h2 { margin: 0; font-size: 1.25rem; }
+  .operation-help-close { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #555; font-size: 1.5rem; line-height: 1; }
+  .operation-help-close:hover { background: #eee; color: #222; }
   .operation-help section { margin-top: 18px; }
   .operation-help h3 { margin: 0 0 6px; font-size: .95rem; }
   .operation-help p { margin: 0; line-height: 1.65; }
