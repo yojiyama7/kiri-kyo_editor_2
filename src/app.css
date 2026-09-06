@@ -21,6 +21,9 @@ button, input, textarea { font: inherit; }
 h1 { margin: 0; font-size: 20px; font-weight: 600; }
 
 .mode-badge {
+  --mode-icon-radius: 9px;
+  --mode-ring-gap: 4px;
+  --mode-border-width: 1px;
   position: fixed;
   z-index: 15;
   top: max(16px, env(safe-area-inset-top));
@@ -28,9 +31,9 @@ h1 { margin: 0; font-size: 20px; font-weight: 600; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 8px 4px 5px;
-  border: 1px solid #d5dae0;
-  border-radius: 999px;
+  padding: var(--mode-ring-gap) 8px var(--mode-ring-gap) var(--mode-ring-gap);
+  border: var(--mode-border-width) solid #d5dae0;
+  border-radius: calc(var(--mode-icon-radius) + var(--mode-ring-gap) + var(--mode-border-width));
   background: rgb(255 255 255 / 94%);
   box-shadow: 0 2px 8px rgb(0 0 0 / 14%);
   color: #273442;
@@ -39,9 +42,9 @@ h1 { margin: 0; font-size: 20px; font-weight: 600; }
 }
 .mode-badge-icon {
   display: inline-flex;
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
+  width: calc(var(--mode-icon-radius) + var(--mode-icon-radius));
+  height: calc(var(--mode-icon-radius) + var(--mode-icon-radius));
+  flex: 0 0 calc(var(--mode-icon-radius) + var(--mode-icon-radius));
   align-items: center;
   justify-content: center;
   padding: 0;

@@ -64,8 +64,8 @@ test('the floating mode badge uses shared icons and full names without the entry
   assert.match(app, /MODE_ABBREVIATIONS\[activeMode\]/);
   assert.match(app, /MODE_NAMES\[activeMode\]/);
   assert.doesNotMatch(app, /entries\.findIndex\(.*activeEntryId.*entries\.length/);
-  assert.match(css, /\.mode-badge \{[^}]*position: fixed;[^}]*border-radius: 999px;[^}]*box-shadow:/s);
-  assert.match(css, /\.mode-badge-icon \{[^}]*width: 18px;[^}]*height: 18px;[^}]*border-radius: 50%;/s);
+  assert.match(css, /\.mode-badge \{[^}]*--mode-icon-radius: 9px;[^}]*--mode-ring-gap: 4px;[^}]*border-radius: calc\(var\(--mode-icon-radius\) \+ var\(--mode-ring-gap\) \+ var\(--mode-border-width\)\);[^}]*box-shadow:/s);
+  assert.match(css, /\.mode-badge-icon \{[^}]*width: calc\(var\(--mode-icon-radius\) \+ var\(--mode-icon-radius\)\);[^}]*border-radius: 50%;/s);
 });
 
 test('guides contain no hard-coded kbd text and saved fields contain no key-derived IDs', () => {
