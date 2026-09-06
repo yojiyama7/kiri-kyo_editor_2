@@ -6,7 +6,7 @@ import { computeLayout } from '../src/layout.ts';
 
 const initial = () => ({
   document: {
-    version: 6, arrows: [], splits: [],
+    arrows: [], splits: [],
     tokens: [{ id: 'token:a', text: 'a', slotId: 'a' }],
     slots: [{ id: 'a' }],
     groups: [],

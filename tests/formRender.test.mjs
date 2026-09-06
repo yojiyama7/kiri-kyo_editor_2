@@ -8,7 +8,7 @@ import { splitSlot } from '../src/tEditing.ts';
 import { EditHistory } from '../src/history.ts';
 
 const base = () => ({
-  version: 6, tokens: ['a', 'b', 'c'].map(text => ({ id: `t:${text}`, slotId: text, text })),
+  tokens: ['a', 'b', 'c'].map(text => ({ id: `t:${text}`, slotId: text, text })),
   slots: ['a', 'b', 'c'].map(id => ({ id })), groups: [], splits: [], arrows: [], translation: '',
 });
 const grouped = () => {

@@ -4,14 +4,14 @@ import { createGroup, isSavedState } from '../src/model.ts';
 import { canSplit, splitSlot, unsplitSlot } from '../src/tEditing.ts';
 import { computeLayout, slotAt, slotPosition, moveLeft, moveRight, selectSlotRange, toggleSlotSelection } from '../src/layout.ts';
 import { computeRenderLayout } from '../src/renderLayout.ts';
-import { enterBasicGroup, settleBasicGroups } from '../src/groupEditing.ts';
+import { enterBasicGroup, reclassifyGroups } from '../src/groupEditing.ts';
 import { deleteGroup } from '../src/structureDeletion.ts';
 import { setSlotMarker } from '../src/markers.ts';
 import { connectArrow } from '../src/arrowEditing.ts';
 import { readEntryDocument } from '../src/entryDocument.ts';
 import { EditHistory } from '../src/history.ts';
 
-const initial = () => ({ version: 6, arrows: [], splits: [], groups: [], translation: '',
+const initial = () => ({ arrows: [], splits: [], groups: [], translation: '',
   tokens: [...'abcd'].map(text => ({ id: `token:${text}`, text, slotId: text })),
   slots: [...'abcd'].map(id => ({ id })) });
 const addGroup = (d, ids) => {
@@ -68,7 +68,7 @@ test('D keeps source references and transfers marker plus outgoing and incoming 
     { sourceSlotId: 'd', targetSlotId: split.leftSlotId },
   ]);
   assert.equal(isSavedState(next), true);
-  assert.equal(settleBasicGroups(next, { x: 4, y: 0 }).document.groups[0].kind, 'composite');
+  assert.equal(reclassifyGroups(next).groups[0].kind, 'composite');
 });
 
 test('D halves support navigation, range/individual selection and independent groups', () => {
@@ -124,7 +124,7 @@ test('D basic slots block internal editing while composite slots keep normal up 
       const cursor = slotPosition(layout, id);
       assert.equal(cursor.y, layout.slotY.get(source.slotId));
       const entered = enterBasicGroup(next, cursor);
-      assert.equal(entered.document, next);
+      assert.equal(entered.openedGroupIds.size, 0);
       assert.equal(entered.cursor.x, cursor.x);
       assert.equal(entered.cursor.y, source.kind === 'basic' ? cursor.y : cursor.y - 1);
     }
@@ -170,14 +170,14 @@ test('D creation and cascade deletion each round-trip with IDs and cursor in one
   assert.deepEqual(history.undo(), ready); assert.deepEqual(history.redo(), removed);
 });
 
-test('v6 and single-entry v5 preserve mixed T/D saves including composite D and reject invalid kinds/references', () => {
+test('v8 preserves mixed T/D saves including composite D and rejects invalid kinds/references', () => {
   let d = splitSlot(initial(), 'd');
   const basic = addGroup(d, ['a', 'b']);
   const composite = addGroup(d, [basic.slotId]);
   d = splitSlot(d, composite.slotId, 'd');
-  const full = { version: 7, entries: [{ id: 'entry', document: d }] };
+  const full = { version: 8, entries: [{ id: 'entry', document: d }] };
   assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(full))), full);
-  assert.deepEqual(readEntryDocument(d).entries[0].document, d);
+  assert.equal(readEntryDocument(d), undefined);
   for (const mutate of [
     v => { v.splits[1].kind = 'unknown'; },
     v => { v.splits[1].kind = 't'; },

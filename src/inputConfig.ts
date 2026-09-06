@@ -1,4 +1,3 @@
-import { bindingLabel, getSettings } from './keybindings.ts';
 import type { FormId, MarkerId } from './inputIds.ts';
 import type { KeyboardOperationId } from './keyboardOperations.ts';
 
@@ -72,11 +71,3 @@ export const DEFAULT_OPERATION_KEY_LABELS: Partial<Record<KeyboardOperationId, r
   'dialog.cancel': ['Esc', 'Ctrl+['], 'focus.next': ['Tab'], 'focus.previous': ['Shift+Tab'],
   'translation.blockTab': ['Tab'], 'translation.commit': ['Enter'],
 };
-
-export function operationKeyLabels(operation: KeyboardOperationId): readonly string[] {
-  return operation === 'translation.blockTab' ? ['Tab'] : getSettings().bindings[operation].map(bindingLabel);
-}
-
-export function operationKeyLabel(operation: KeyboardOperationId, separator = ' / '): string {
-  return operationKeyLabels(operation).join(separator) || '未割り当て';
-}

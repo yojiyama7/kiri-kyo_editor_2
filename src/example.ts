@@ -14,7 +14,7 @@ export function createExampleDocument(): SavedState {
   const predicate = createGroup(tokens, slots, [tokens[1].slotId, student.slotId, explanation.slotId]);
   slots.push({ id: predicate.slotId });
   return {
-    version: 6, arrows: [], splits: [], tokens, slots, groups: [student, explanation, predicate],
+    arrows: [], splits: [], tokens, slots, groups: [student, explanation, predicate],
     translation: '彼女はその学生に丁寧な説明をした。',
   };
 }

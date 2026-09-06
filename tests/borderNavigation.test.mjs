@@ -9,7 +9,7 @@ import { isSavedState } from '../src/model.ts';
 import { readEntryDocument } from '../src/entryDocument.ts';
 
 const documentOf = (words = ['a', 'b', 'c', 'd']) => ({
-  version: 6, translation: '', groups: [], splits: [], arrows: [],
+  translation: '', groups: [], splits: [], arrows: [],
   tokens: words.map(text => ({ id: `token:${text}`, text, slotId: text })),
   slots: words.map(id => ({ id })),
 });
@@ -145,5 +145,5 @@ test('border navigation leaves document, saved schema, undo and redo intact', ()
   assert.equal(history.redo(), undefined);
   assert.equal(JSON.stringify(document), serialized);
   assert.equal(isSavedState(document), true);
-  assert.deepEqual(readEntryDocument({ version: 7, entries: [{ id: 'entry', document }] }).entries[0].document, document);
+  assert.deepEqual(readEntryDocument({ version: 8, entries: [{ id: 'entry', document }] }).entries[0].document, document);
 });

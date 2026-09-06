@@ -5,7 +5,7 @@ import { createEditorUpdates } from '../src/editorUpdates.ts';
 import { createPersistenceClient } from '../src/persistenceClient.ts';
 
 const entry = (id, text = '') => ({ id, document: {
-  version: 6, tokens: [], slots: [], groups: [], splits: [], arrows: [], translation: text,
+  tokens: [], slots: [], groups: [], splits: [], arrows: [], translation: text,
 } });
 const drain = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 function setup() {
@@ -214,7 +214,7 @@ test('Worker transport waits for matching replies, reports failure and can resta
   const first = client.send({ kind: 'read' }).then(value => { resolved = true; return value; });
   await drain();
   assert.equal(resolved, false);
-  const document = { version: 7, entries: [entry('a')] };
+  const document = { version: 8, entries: [entry('a')] };
   workers[0].onmessage({ data: { id: workers[0].messages[0].id, document } });
   assert.deepEqual(await first, document);
   const failed = client.send({ kind: 'read' });

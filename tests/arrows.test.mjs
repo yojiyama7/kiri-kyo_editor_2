@@ -2,16 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { isSavedState } from '../src/model.ts';
 import { connectArrow, deleteArrow, pruneArrows } from '../src/arrowEditing.ts';
-import { computeLayout, intervalsIntersect, moveVertical, moveLeft, moveRight, moveToRowEdge, slotPosition, slotAt } from '../src/layout.ts';
+import { computeLayout, intervalsIntersect, moveVertical, moveLeft, moveRight, moveToRowEdge, relocateCursor, slotPosition, slotAt } from '../src/layout.ts';
 import { computeRenderLayout } from '../src/renderLayout.ts';
 import { renderArrows } from '../src/arrowRender.ts';
 import { setSlotMarker } from '../src/markers.ts';
 import { splitSlot, unsplitSlot } from '../src/tEditing.ts';
 import { deleteGroup } from '../src/structureDeletion.ts';
-import { enterBasicGroup, readSavedDocument, settleBasicGroups } from '../src/groupEditing.ts';
+import { enterBasicGroup, groupsForEditing, readSavedDocument, reclassifyGroups, settleOpenedGroups } from '../src/groupEditing.ts';
 import { EditHistory } from '../src/history.ts';
 
-const initial = () => ({ version: 6, arrows: [], splits: [], groups: [], translation: '',
+const initial = () => ({ arrows: [], splits: [], groups: [], translation: '',
   tokens: [...'abcdefgh'].map((text) => ({ id: `token:${text}`, text, slotId: text })),
   slots: [...'abcdefgh'].map((id) => ({ id, marker: 'marker.adverb' })),
 });
@@ -241,7 +241,7 @@ test('structural cascade removes incident arrows only and preserves surviving sh
   assert.equal(isSavedState(next), true);
 });
 
-test('v5 validates arrows and round-trips while v4 and malformed arrow states are rejected', () => {
+test('current schema validates arrows and rejects versioned inner or malformed arrow states', () => {
   const d = connectArrow(initial(), 'a', 'b');
   assert.deepEqual(readSavedDocument(JSON.parse(JSON.stringify(d))), d);
   for (const mutate of [
@@ -296,11 +296,11 @@ test('reclassification with arrows relocates cursor and selection anchor by slot
   const child = group(d, 'child', ['a', 'b']); const parent = group(d, 'parent', [child]);
   d = connectArrow(d, child, 'e');
   const cursor = slotPosition(layoutOf(d), parent);
-  const next = settleBasicGroups(d, cursor, cursor);
-  const l = layoutOf(next.document);
-  assert.equal(slotAt(l, next.cursor.x, next.cursor.y), parent);
-  assert.equal(slotAt(l, next.anchor.x, next.anchor.y), parent);
-  assert.equal(next.document.groups[0].kind, 'basic');
+  const document = reclassifyGroups(d);
+  const l = layoutOf(document);
+  const relocated = relocateCursor(layoutOf(d), l, cursor);
+  assert.equal(slotAt(l, relocated.x, relocated.y), parent);
+  assert.equal(document.groups[0].kind, 'basic');
   assert.equal(l.arrows.length, 1);
 });
 
@@ -315,15 +315,16 @@ const arrowBasicDocument = () => {
 
 test('arrow endpoints can enter a basic at the same X, with every exit route settling and retaining IDs', () => {
   const { d, basic, parent } = arrowBasicDocument();
+  const before = structuredClone(d);
   const source = d.arrows[0].sourceSlotId;
   const opened = enterBasicGroup(d, { x: 3, y: layoutOf(d).slotY.get(basic) });
-  const l = layoutOf(opened.document);
+  const l = computeLayout(d.tokens, groupsForEditing(d.groups, opened.openedGroupIds), d.splits, d.arrows);
   assert.equal(opened.cursor.x, 3);
   assert.equal(slotAt(l, opened.cursor.x, opened.cursor.y), 'd');
-  assert.equal(opened.document.groups[0].kind, 'composite');
-  assert.deepEqual(opened.document.arrows, d.arrows);
-  assert.equal(settleBasicGroups(opened.document, moveLeft(l, opened.cursor)).document, opened.document);
-  assert.equal(settleBasicGroups(opened.document, moveVertical(l, opened.cursor, -1)).document, opened.document);
+  assert.equal(groupsForEditing(d.groups, opened.openedGroupIds)[0].kind, 'composite');
+  assert.deepEqual(d, before);
+  assert.equal(settleOpenedGroups(d, moveLeft(l, opened.cursor), null, opened.openedGroupIds).openedGroupIds.size, 1);
+  assert.equal(settleOpenedGroups(d, moveVertical(l, opened.cursor, -1), null, opened.openedGroupIds).openedGroupIds.size, 1);
   const destinations = [
     moveLeft(l, { x: 2, y: 0 }), moveRight(l, opened.cursor),
     moveVertical(l, opened.cursor, 1),
@@ -332,12 +333,11 @@ test('arrow endpoints can enter a basic at the same X, with every exit route set
   ];
   for (const destination of destinations) {
     const target = slotAt(l, destination.x, destination.y);
-    const settled = settleBasicGroups(opened.document, destination);
-    assert.equal(settled.document.groups[0].kind, 'basic');
-    assert.equal(slotAt(layoutOf(settled.document), settled.cursor.x, settled.cursor.y), target);
-    assert.deepEqual(settled.document.arrows, d.arrows);
-    assert.equal(settled.document.arrows[0].sourceSlotId, source);
-    assert.equal(isSavedState(settled.document), true);
+    const settled = settleOpenedGroups(d, destination, null, opened.openedGroupIds);
+    assert.equal(settled.openedGroupIds.size, 0);
+    assert.equal(slotAt(layoutOf(d), settled.cursor.x, settled.cursor.y), target);
+    assert.equal(d.arrows[0].sourceSlotId, source);
+    assert.equal(isSavedState(d), true);
   }
 });
 
@@ -345,26 +345,21 @@ test('connecting and retargeting to an interior token preserves the endpoint aft
   const { d, basic } = arrowBasicDocument();
   for (const original of [d, { ...d, arrows: [] }]) {
     const opened = enterBasicGroup(original, slotPosition(layoutOf(original), basic));
-    const target = slotAt(layoutOf(opened.document), opened.cursor.x, opened.cursor.y);
-    const connected = connectArrow(opened.document, 'a', target);
+    const editingLayout = computeLayout(original.tokens, groupsForEditing(original.groups, opened.openedGroupIds), original.splits, original.arrows);
+    const target = slotAt(editingLayout, opened.cursor.x, opened.cursor.y);
+    const connected = reclassifyGroups(connectArrow(original, 'a', target));
     assert.deepEqual(connected.arrows, [{ sourceSlotId: 'a', targetSlotId: 'c' }]);
-    assert.equal(settleBasicGroups(connected, opened.cursor).document.groups[0].kind, 'composite');
-    const closed = settleBasicGroups(connected, slotPosition(layoutOf(connected), basic));
-    assert.equal(closed.document.groups[0].kind, 'basic');
-    assert.deepEqual(closed.document.arrows, connected.arrows);
-    assert.deepEqual(readSavedDocument(JSON.parse(JSON.stringify(closed.document))).arrows, connected.arrows);
-    assert.equal(isSavedState(closed.document), true);
+    assert.equal(connected.groups[0].kind, 'basic');
+    const closed = settleOpenedGroups(connected, slotPosition(editingLayout, basic), null, opened.openedGroupIds, true);
+    assert.equal(closed.openedGroupIds.size, 0);
+    assert.deepEqual(readSavedDocument(JSON.parse(JSON.stringify(connected))).arrows, connected.arrows);
+    assert.equal(isSavedState(connected), true);
     const history = new EditHistory();
     const before = { document: original, cursor: slotPosition(layoutOf(original), basic) };
-    history.record(before, opened);
-    history.record(opened, { document: connected, cursor: opened.cursor });
-    history.record({ document: connected, cursor: opened.cursor }, closed);
-    assert.deepEqual(history.undo().document, connected);
-    assert.deepEqual(history.undo().document, opened.document);
+    const after = { document: connected, cursor: closed.cursor };
+    history.record(before, after);
     assert.deepEqual(history.undo(), before);
-    assert.deepEqual(history.redo().document, opened.document);
-    assert.deepEqual(history.redo().document, connected);
-    assert.deepEqual(history.redo().document, closed.document);
+    assert.deepEqual(history.redo(), after);
   }
 });
 
@@ -375,13 +370,14 @@ test('arrow navigation retains split restrictions and treats a sparse underline 
     for (const id of [split.splits[0].leftSlotId, split.splits[0].rightSlotId]) {
       const cursor = slotPosition(layoutOf(split), id);
       const result = enterBasicGroup(split, cursor);
-      assert.equal(result.document, split);
+      assert.equal(result.openedGroupIds.size, 0);
       assert.deepEqual(result.cursor, cursor);
     }
   }
   const sparse = { ...d, groups: d.groups.map(g => g.slotId === basic ? { ...g, slots: ['c', 'e'] } : g) };
   const opened = enterBasicGroup(sparse, slotPosition(layoutOf(sparse), basic));
-  const closed = settleBasicGroups(opened.document, { x: 3, y: 0 });
-  assert.equal(closed.document.groups[0].kind, 'basic');
-  assert.deepEqual(closed.document.arrows, d.arrows);
+  const closed = settleOpenedGroups(sparse, { x: 3, y: 0 }, null, opened.openedGroupIds);
+  assert.equal(closed.openedGroupIds.size, 0);
+  assert.equal(sparse.groups[0].kind, 'basic');
+  assert.deepEqual(sparse.arrows, d.arrows);
 });

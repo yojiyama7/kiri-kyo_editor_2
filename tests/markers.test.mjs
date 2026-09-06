@@ -36,7 +36,7 @@ test('plus commits immediately and can replace a pending marker', () => {
   assert.deepEqual(nextMarkerInput('', '+'), { handled: true, restarted: false, marker: 'marker.plus', buffer: '' });
   assert.deepEqual(nextMarkerInput('a', '+'), { handled: true, restarted: true, marker: 'marker.plus', buffer: '' });
   const document = {
-    version: 6, arrows: [], splits: [], tokens: [{ id: 't', text: 'a', slotId: 't' }],
+    arrows: [], splits: [], tokens: [{ id: 't', text: 'a', slotId: 't' }],
     slots: setSlotMarker([{ id: 't', marker: 'marker.subject' }], 't', 'marker.plus'), groups: [], translation: '',
   };
   assert.equal(document.slots[0].marker, 'marker.plus');
@@ -127,7 +127,7 @@ test('markers replace or clear one slot without changing slot references or inpu
 
 test('marker edits round-trip through JSON and history, including empty slots and no-ops', () => {
   const before = {
-    document: { version: 6, arrows: [], splits: [], tokens: [{ id: 't', text: 'a', slotId: 't' }],
+    document: { arrows: [], splits: [], tokens: [{ id: 't', text: 'a', slotId: 't' }],
       slots: [{ id: 't' }, { id: 'g' }], groups: [{ kind: 'basic', id: 'g', slotId: 'g', slots: ['t'] }], translation: '' },
     cursor: { x: 0, y: 1 },
   };
@@ -149,7 +149,7 @@ test('marker edits round-trip through JSON and history, including empty slots an
 
 test('nad is one marker transaction, persists, and consumes d rather than invoking a split', () => {
   const before = {
-    document: { version: 6, arrows: [], splits: [], tokens: [{ id: 't', text: 'there', slotId: 't' }],
+    document: { arrows: [], splits: [], tokens: [{ id: 't', text: 'there', slotId: 't' }],
       slots: [{ id: 't', marker: 'marker.subject' }], groups: [], translation: '' },
     cursor: { x: 0, y: 0 },
   };

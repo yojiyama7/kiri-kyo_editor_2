@@ -57,7 +57,7 @@ export type Group = {
   form?: FormId;
 };
 
-// Missing kind is the original T split representation accepted by the current v6 schema.
+// Missing kind denotes a T split in the current schema.
 export type SlotSplit = {
   slotId: string;
   leftSlotId: string;
@@ -85,7 +85,6 @@ export function isAppositionEndpoint(marker: Marker | undefined): boolean {
 }
 
 export type SavedState = {
-  version: 6;
   arrows: Arrow[];
   splits: SlotSplit[];
   tokens: Token[];
@@ -145,7 +144,7 @@ function isNonEmptyString(value: unknown): value is string {
 export function isSavedState(value: unknown): value is SavedState {
   if (
     !isRecord(value)
-    || value.version !== 6
+    || Object.hasOwn(value, 'version')
     || !Array.isArray(value.arrows)
     || !Array.isArray(value.splits)
     || !Array.isArray(value.tokens)
@@ -193,6 +192,9 @@ export function isSavedState(value: unknown): value is SavedState {
     && (split.leftForm === undefined || (split.kind === 'd' && isFormId(split.leftForm)))
     && (split.rightForm === undefined || (split.kind === 'd' && isFormId(split.rightForm))))) return false;
   const saved = value as SavedState;
+  const dSourceIds = new Set(splits.filter(split => split.kind === 'd').map(split => split.slotId));
+  if (saved.tokens.some(token => hasTokenSlot(token) && dSourceIds.has(token.slotId) && 'form' in token && token.form !== undefined)
+    || saved.groups.some(group => dSourceIds.has(group.slotId) && group.form !== undefined)) return false;
   const slotIds = saved.slots.map((slot) => slot.id);
   const tokenIds = saved.tokens.map((token) => token.id);
   const groupIds = saved.groups.map((group) => group.id);
@@ -255,32 +257,6 @@ export function isSavedState(value: unknown): value is SavedState {
   }
 }
 
-/** Upgrade slotless opening parentheses at the read boundary; runtime validation stays strict. */
 export function readSavedState(value: unknown): SavedState | undefined {
-  if (!isRecord(value) || value.version !== 6 || !Array.isArray(value.tokens) || !Array.isArray(value.slots)) return undefined;
-  if (!value.tokens.some(token => isRecord(token) && token.kind === 'paren-open' && token.slotId === undefined)) {
-    return isSavedState(value) ? value : undefined;
-  }
-  // Reserve references as well as owners, so migration cannot repair dangling references.
-  const used = new Set<string>();
-  function reserve(item: unknown): void {
-    if (typeof item === 'string') used.add(item);
-    else if (Array.isArray(item)) item.forEach(reserve);
-    else if (isRecord(item)) Object.values(item).forEach(reserve);
-  }
-  reserve(value);
-  const slots = [...value.slots];
-  const tokens = value.tokens.map(token => {
-    if (!isRecord(token) || token.kind !== 'paren-open' || token.slotId !== undefined) return token;
-    if (!isNonEmptyString(token.id)) return token;
-    // Stable across repeated reads of an old database before its next save.
-    const base = `paren:${token.id}`;
-    let slotId = base;
-    for (let suffix = 1; used.has(slotId); suffix++) slotId = `${base}:${suffix}`;
-    used.add(slotId);
-    slots.push({ id: slotId });
-    return { ...token, slotId };
-  });
-  const next = { ...value, tokens, slots };
-  return isSavedState(next) ? next : undefined;
+  return isSavedState(value) ? value : undefined;
 }

@@ -7,7 +7,7 @@
   import { createExampleDocument } from './example';
   import { EditHistory, type EditorSnapshot } from './history';
   import { markerLabel, type MarkerId } from './markers';
-  import { operationKeyLabel } from './inputConfig';
+  import { operationKeyLabel } from './keybindings';
   import { createEditorUpdates } from './editorUpdates';
   import { createEntryPersistence, LEGACY_STORAGE_KEY, RECOVERY_PREFIX, type PersistenceStatus } from './entryPersistence';
   import { createPersistenceClient } from './persistenceClient';
@@ -36,6 +36,7 @@
   let ready = false;
   let restoring = false;
   let loadFailed = false;
+  let legacyDiscarded = false;
   let saveError: string | null = null;
   let copyStatus = '';
   let bulkDialog: HTMLDialogElement;
@@ -60,7 +61,7 @@
     .map(markerLabel).join(' / ');
 
   $: bulkCount = parseEnglishLines(bulkDraft).length;
-  $: documentState = { version: 7, entries } satisfies EntryDocument;
+  $: documentState = { version: 8, entries } satisfies EntryDocument;
   $: activeState = rowStates[activeEntryId];
   // Changes schedule the idle save, but do not assemble any document-wide JSON.
   $: { ready; restoring; activeEntryId; documentState; rowStates; updates.schedule(); }
@@ -96,12 +97,17 @@
           if (raw !== null) recovery.push({ key, raw });
         }
       }
-      const document = await client.send({ kind: 'load', legacyRaw, legacyError,
-        initial: { version: 7, entries }, recovery: recovery.map(item => item.raw) });
+      const loaded = await client.load({ kind: 'load', legacyRaw, legacyError,
+        initial: { version: 8, entries }, recovery: recovery.map(item => item.raw) });
+      const document = loaded.document;
       if (destroyed) return;
       if (!document) throw new Error('保存データが読み込めません');
       // Do not clear a journal that another tab has updated during recovery.
       for (const { key, raw } of recovery) if (localStorage.getItem(key) === raw) localStorage.removeItem(key);
+      if (loaded.discardedLegacy) {
+        legacyDiscarded = true;
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+      }
       entries = document.entries;
       activeEntryId = entries[0].id;
       ready = true;
@@ -138,14 +144,14 @@
 
   function snapshot(): DocumentSnapshot {
     const state = currentEditor()?.snapshot();
-    return structuredClone(state ? withEntrySnapshot({ version: 7, entries }, activeEntryId, state) : {
-      document: { version: 7, entries }, activeEntryId, cursor: { x: 0, y: 0 },
+    return structuredClone(state ? withEntrySnapshot({ version: 8, entries }, activeEntryId, state) : {
+      document: { version: 8, entries }, activeEntryId, cursor: { x: 0, y: 0 },
     });
   }
 
   function recordEntry(id: string, before: EditorSnapshot, after: EditorSnapshot) {
     if (restoring) return;
-    const document: EntryDocument = { version: 7, entries };
+    const document: EntryDocument = { version: 8, entries };
     history.record(withEntrySnapshot(document, id, before), withEntrySnapshot(document, id, after));
     updateEntry(id, after);
   }
@@ -444,7 +450,7 @@
     debugLoading = true;
     // Full diagnostics are assembled only by an explicit user request.
     displayJSON = debugJSON({
-      ready, activeEntryId, mode: rowStates[activeEntryId]?.mode ?? 'NORMAL', document: { version: 7, entries },
+      ready, activeEntryId, mode: rowStates[activeEntryId]?.mode ?? 'NORMAL', document: { version: 8, entries },
       entries: Object.fromEntries(entries.map(({ id }) => [id, rowStates[id]?.getDisplay() ?? null])),
     });
     try {
@@ -499,6 +505,11 @@
   </header>
 
   {#if settingsError}<p role="alert">{settingsError}</p>{/if}
+  {#if legacyDiscarded}
+    <p class="legacy-discarded" role="alert">旧形式の保存文書を破棄し、version 8の初期文書を作成しました。
+      <button type="button" on:click={() => { legacyDiscarded = false; }}>閉じる</button>
+    </p>
+  {/if}
   <section class="guide" aria-label="キーボード操作ガイド">
     <span><kbd>{keyLabel('entry.next')}</kbd> 次の組</span><span><kbd>{keyLabel('entry.previous')}</kbd> 前の組</span>
     <span><kbd>{keyLabel('entry.reorderDown')}</kbd> 下へ入れ替え</span><span><kbd>{keyLabel('entry.reorderUp')}</kbd> 上へ入れ替え</span>

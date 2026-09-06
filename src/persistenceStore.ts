@@ -2,7 +2,16 @@ import { readEntryDocument, type Entry, type EntryDocument } from './entryDocume
 import { parseRecovery, type PersistenceRequest, type SaveBatch } from './entryPersistence.ts';
 
 export const DATABASE_NAME = 'kiri-kyo-editor';
-type DocumentMetadata = { version: 7; ids: string[] };
+type DocumentMetadata = { version: 8; ids: string[] };
+
+export class LegacyDocumentError extends Error {}
+
+function isLegacyRecovery(raw: string): boolean {
+  try {
+    const value = JSON.parse(raw) as { version?: unknown; documentVersion?: unknown };
+    return value?.version === 2 && value.documentVersion !== 8;
+  } catch { return false; }
+}
 
 function request<T>(value: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -51,11 +60,15 @@ export function createPersistenceStore(factory: IDBFactory, name = DATABASE_NAME
       done,
     ]);
     if (!metadata && !rows.length) return undefined;
-    if (!metadata || metadata.version !== 7 || !Array.isArray(metadata.ids) || metadata.ids.length !== rows.length) {
+    if ((metadata && metadata.version !== 8)
+      || rows.some(row => !!row?.document && Object.hasOwn(row.document, 'version'))) {
+      throw new LegacyDocumentError('旧形式の保存文書です');
+    }
+    if (!metadata || !Array.isArray(metadata.ids) || metadata.ids.length !== rows.length) {
       throw new Error('保存データの構成が不正です');
     }
     const byId = new Map(rows.map(row => [row.id, row]));
-    const document = readEntryDocument({ version: 7, entries: metadata.ids.map(id => byId.get(id)) });
+    const document = readEntryDocument({ version: 8, entries: metadata.ids.map(id => byId.get(id)) });
     if (!document) throw new Error('保存された文を読み込めません');
     return document;
   }
@@ -86,7 +99,7 @@ export function createPersistenceStore(factory: IDBFactory, name = DATABASE_NAME
             if (JSON.stringify(previous[index]) !== JSON.stringify(change.entry)) entries.put(change.entry);
           } else if (previous[index] !== undefined) entries.delete(change.id);
         }
-        if (batch.order) metadata.put({ version: 7, ids: order } satisfies DocumentMetadata, 'document');
+        if (batch.order) metadata.put({ version: 8, ids: order } satisfies DocumentMetadata, 'document');
         metadata.put(batch.sequence, `receipt:${batch.session}`);
       }
       await done;
@@ -106,13 +119,24 @@ export function createPersistenceStore(factory: IDBFactory, name = DATABASE_NAME
       done,
     ]);
   }
-  async function load(input: Extract<PersistenceRequest, { kind: 'load' }>): Promise<EntryDocument> {
-    const journals = input.recovery.map(parseRecovery);
-    let document = await read();
+  async function load(input: Extract<PersistenceRequest, { kind: 'load' }>): Promise<{ document: EntryDocument; discardedLegacy: boolean }> {
+    let discardedLegacy = input.legacyRaw !== null;
+    const currentRecovery = input.recovery.filter(raw => {
+      const legacy = isLegacyRecovery(raw);
+      discardedLegacy ||= legacy;
+      return !legacy;
+    });
+    const journals = currentRecovery.map(parseRecovery);
+    let document: EntryDocument | undefined;
+    try { document = await read(); }
+    catch (error) {
+      if (!(error instanceof LegacyDocumentError)) throw error;
+      await discard();
+      discardedLegacy = true;
+    }
     if (!document) {
       if (input.legacyError) throw new Error(input.legacyError);
-      document = input.legacyRaw === null ? input.initial : readEntryDocument(JSON.parse(input.legacyRaw));
-      if (!document) throw new Error('以前の保存データを読み込めません。元のデータは保持しています');
+      document = input.initial;
       await write({
         session: 'initial-migration', sequence: 1,
         changes: document.entries.map(entry => ({ id: entry.id, entry, generation: 1 })),
@@ -125,7 +149,7 @@ export function createPersistenceStore(factory: IDBFactory, name = DATABASE_NAME
       const batches = [...journal.batches].sort((a, b) => a.session.localeCompare(b.session) || a.sequence - b.sequence);
       for (const batch of batches) await write(batch);
     }
-    return (await read())!;
+    return { document: (await read())!, discardedLegacy };
   }
   return { read, write, load, discard };
 }

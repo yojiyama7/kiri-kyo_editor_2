@@ -2,15 +2,13 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { OPERATIONS, SETTINGS_OPERATIONS, compareOperations, defaultSettings, resolveInput, findConflicts, captureKey,
   validateSettings, bindingLabel, getSettings, applySettings, loadSettings, saveSettings, SETTINGS_STORAGE_KEY,
-  subscribeSettings, sequenceBindings } from '../src/keybindings.ts';
-import { DEFAULT_OPERATION_KEY_LABELS, FIXED_OPERATION_IDS, operationKeyLabel } from '../src/inputConfig.ts';
+  subscribeSettings, sequenceBindings, operationKeyLabel } from '../src/keybindings.ts';
+import { DEFAULT_OPERATION_KEY_LABELS, FIXED_OPERATION_IDS } from '../src/inputConfig.ts';
 import { nextMarkerInput } from '../src/markers.ts';
 import { formIdForInput } from '../src/formEditing.ts';
 import { pseudoInputAction } from '../src/pseudoEditing.ts';
 import { customMarkerInputAction } from '../src/customMarkerEditing.ts';
 import { moveBorder } from '../src/borderNavigation.ts';
-import { entryShortcut } from '../src/entryShortcuts.ts';
-import { resolveKeyboardOperation } from '../src/keyboardOperations.ts';
 
 const chord = (key, extra = {}) => captureKey({ key, ...extra });
 const sequence = sequence => ({ kind: 'sequence', sequence });
@@ -34,9 +32,7 @@ test('every pair of operations has a fixed total order; categories and Undo befo
   }
   assert.ok(compareOperations('history.undo', 'history.redo') < 0);
   assert.ok(compareOperations('cursor.left', 'entry.reorderDown') < 0);
-  const bindings = ['selection.commit', 'arrow.commit'].map(operation => ({ operation, rules: [{ key: 'Enter' }] }));
-  assert.equal(resolveKeyboardOperation({ key: 'Enter' }, bindings), 'arrow.commit');
-  assert.equal(resolveKeyboardOperation({ key: 'Enter' }, bindings.reverse()), 'arrow.commit');
+  assert.equal(winner(defaultSettings(), 'Enter', 'ARROW').operation, 'arrow.commit');
 });
 
 test('dialog focus movement stays fixed outside the settings UI and is normalized on apply and save', () => {
@@ -223,7 +219,7 @@ test('all input helpers use remapped actions; native text modes do not take norm
   assert.equal(pseudoInputAction({ key: 'q', metaKey: true }, false), 'pseudo.commit');
   assert.equal(customMarkerInputAction({ key: 'q', code: 'KeyQ', altKey: true }, false), 'marker.customCommit');
   assert.equal(moveBorder(2, 3, { key: 'q' }), 1);
-  assert.equal(entryShortcut({ key: 'w', metaKey: true }, 'FORM'), 'entry.next');
+  assert.equal(winner(settings, 'w', 'FORM', '', { metaKey: true }).operation, 'entry.next');
   assert.equal(formIdForInput('zz'), 'form.past');
   for (const mode of ['INSERT', 'TRANSLATION', 'PSEUDO_INPUT', 'MARKER_INPUT']) assert.equal(winner(settings, 'q', mode), undefined);
 });

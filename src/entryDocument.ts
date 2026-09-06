@@ -2,10 +2,12 @@ import { isSavedState, type SavedState } from './model.ts';
 import { readSavedDocument } from './groupEditing.ts';
 import type { Cursor } from './layout.ts';
 import type { EditorSnapshot } from './history.ts';
-import type { EntryInputMode } from './entryShortcuts.ts';
+
+export type EntryInputMode = Extract<import('./keybindings.ts').InputMode,
+  'INSERT' | 'TRANSLATION' | 'PSEUDO_INPUT' | 'MARKER_INPUT' | 'MARKER_SEQUENCE' | 'FORM'> | null;
 
 export type Entry = { id: string; document: SavedState };
-export type EntryDocument = { version: 7; entries: Entry[] };
+export type EntryDocument = { version: 8; entries: Entry[] };
 export type DocumentSnapshot = { document: EntryDocument; activeEntryId: string; cursor: Cursor };
 export type EntryEditorState = {
   snapshot: EditorSnapshot;
@@ -29,7 +31,7 @@ export type EntryEditorHandle = {
 };
 
 export function createEntry(document: SavedState = {
-  version: 6, tokens: [], slots: [], groups: [], splits: [], arrows: [], translation: '',
+  tokens: [], slots: [], groups: [], splits: [], arrows: [], translation: '',
 }): Entry {
   return { id: crypto.randomUUID(), document };
 }
@@ -37,7 +39,7 @@ export function createEntry(document: SavedState = {
 export function isEntryDocument(value: unknown): value is EntryDocument {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as EntryDocument;
-  if (candidate.version !== 7 || !Array.isArray(candidate.entries) || !candidate.entries.length) return false;
+  if (candidate.version !== 8 || !Array.isArray(candidate.entries) || !candidate.entries.length) return false;
   const ids = new Set<string>();
   for (const entry of candidate.entries) {
     if (!entry || typeof entry.id !== 'string' || !entry.id.length || ids.has(entry.id)
@@ -49,14 +51,10 @@ export function isEntryDocument(value: unknown): value is EntryDocument {
 
 export function readEntryDocument(value: unknown): EntryDocument | undefined {
   if (!value || typeof value !== 'object') return undefined;
-  const candidate = value as EntryDocument | SavedState;
-  if (candidate.version === 6) {
-    const document = readSavedDocument(candidate);
-    return document ? { version: 7, entries: [createEntry(document)] } : undefined;
-  }
-  if (candidate.version !== 7 || !Array.isArray(candidate.entries)) return undefined;
+  const candidate = value as EntryDocument;
+  if (candidate.version !== 8 || !Array.isArray(candidate.entries)) return undefined;
   const normalized = {
-    version: 7,
+    version: 8,
     entries: candidate.entries.map(entry => entry && ({ ...entry, document: readSavedDocument(entry.document) })),
   };
   return isEntryDocument(normalized) ? normalized : undefined;
@@ -64,7 +62,7 @@ export function readEntryDocument(value: unknown): EntryDocument | undefined {
 
 export function withEntrySnapshot(document: EntryDocument, id: string, state: EditorSnapshot): DocumentSnapshot {
   return {
-    document: { version: 7, entries: document.entries.map((entry) => entry.id === id
+    document: { version: 8, entries: document.entries.map((entry) => entry.id === id
       ? { ...entry, document: state.document } : entry) },
     activeEntryId: id,
     cursor: state.cursor,
@@ -77,7 +75,7 @@ export function insertEntry(state: DocumentSnapshot, afterId: string): DocumentS
   const entry = createEntry();
   const entries = [...state.document.entries];
   entries.splice(index + 1, 0, entry);
-  return { document: { version: 7, entries }, activeEntryId: entry.id, cursor: { x: 0, y: 0 } };
+  return { document: { version: 8, entries }, activeEntryId: entry.id, cursor: { x: 0, y: 0 } };
 }
 
 export function parseEnglishLines(text: string): string[] {
@@ -100,13 +98,13 @@ export function insertEnglishEntries(
     return {
       id: createId(),
       document: {
-        version: 6, tokens, slots: tokens.map(({ slotId }) => ({ id: slotId })),
+        tokens, slots: tokens.map(({ slotId }) => ({ id: slotId })),
         groups: [], splits: [], arrows: [], translation: '',
       },
     };
   });
   const entries = [...state.document.entries.slice(0, index + 1), ...added, ...state.document.entries.slice(index + 1)];
-  return { document: { version: 7, entries }, activeEntryId: added[0].id, cursor: { x: 0, y: 0 } };
+  return { document: { version: 8, entries }, activeEntryId: added[0].id, cursor: { x: 0, y: 0 } };
 }
 
 export function removeEntry(state: DocumentSnapshot, id: string): DocumentSnapshot {
@@ -116,7 +114,7 @@ export function removeEntry(state: DocumentSnapshot, id: string): DocumentSnapsh
   if (!entries.length) entries.push(createEntry());
   const activeEntryId = id === state.activeEntryId ? entries[Math.min(index, entries.length - 1)].id : state.activeEntryId;
   return {
-    document: { version: 7, entries }, activeEntryId,
+    document: { version: 8, entries }, activeEntryId,
     cursor: activeEntryId === state.activeEntryId ? state.cursor : { x: 0, y: 0 },
   };
 }
@@ -127,5 +125,5 @@ export function reorderEntry(state: DocumentSnapshot, id: string, direction: -1 
   if (index < 0 || target < 0 || target >= state.document.entries.length) return state;
   const entries = [...state.document.entries];
   [entries[index], entries[target]] = [entries[target], entries[index]];
-  return { ...state, document: { version: 7, entries } };
+  return { ...state, document: { version: 8, entries } };
 }

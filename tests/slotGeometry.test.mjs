@@ -13,7 +13,7 @@ import { computeRenderLayout } from '../src/renderLayout.ts';
 import { readSavedDocument } from '../src/groupEditing.ts';
 import { EditHistory } from '../src/history.ts';
 
-const initial = () => ({ version: 6, arrows: [], splits: [], groups: [], translation: '',
+const initial = () => ({ arrows: [], splits: [], groups: [], translation: '',
   tokens: [...'abcdefgh'].map((text) => ({ id: `token:${text}`, text, slotId: text })),
   slots: [...'abcdefgh'].map((id) => ({ id })),
 });
@@ -142,7 +142,7 @@ test('cascade removal renumbers atoms and keeps a surviving cursor and arrows on
   assertIntegerPartition(next);
 });
 
-test('v5 reload and one-step undo/redo reproduce integer ranges and cursor positions', () => {
+test('current reload and one-step undo/redo reproduce integer ranges and cursor positions', () => {
   const before = { document: initial(), cursor: { x: 1, y: 0 } };
   const document = splitSlot(before.document, 'b');
   const after = { document, cursor: slotPosition(layoutOf(document), document.splits[0].rightSlotId) };

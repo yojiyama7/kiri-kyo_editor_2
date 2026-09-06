@@ -8,10 +8,9 @@ import { splitSlot } from '../src/tEditing.ts';
 import { insertBracket } from '../src/bracketEditing.ts';
 import { insertPseudoToken } from '../src/pseudoEditing.ts';
 import { computeLayout, slotPosition, selectSlotRange, toggleSlotSelection } from '../src/layout.ts';
-import { entryShortcut } from '../src/entryShortcuts.ts';
 import { matchesKeyboardInput } from '../src/keyboard.ts';
-import { resolveKeyboardOperation } from '../src/keyboardOperations.ts';
 import { createExampleDocument } from '../src/example.ts';
+import { reclassifyGroups } from '../src/groupEditing.ts';
 import ts from 'typescript';
 
 // Exercise the component's actual exported handlers without a browser or real
@@ -52,7 +51,7 @@ before(async () => {
     && ['handleKeydown', 'moveEntry', 'finishEditing', 'closeEntryMenu', 'activate', 'saveCurrentEntry'].includes(node.name?.text)).map(node => node.getText(ast)).join('\n');
   assert.equal(functions.includes('function moveEntry'), true);
   const body = ts.transpileModule(functions, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  appNavigation = new Function('entryShortcut', 'matchesKeyboardInput', 'resolveKeyboardOperation', 'editors', 'initialIndex', `
+  appNavigation = new Function('matchesKeyboardInput', 'editors', 'initialIndex', `
     ${body}
     const Element = class {};
     const HTMLButtonElement = class extends Element {};
@@ -72,7 +71,7 @@ before(async () => {
 });
 
 const initialDocument = () => ({
-  version: 6, translation: '', groups: [], splits: [], arrows: [],
+  translation: '', groups: [], splits: [], arrows: [],
   tokens: ['a', 'b', 'c'].map(text => ({ id: `token:${text}`, text, slotId: text })),
   slots: ['a', 'b', 'c'].map(id => ({ id })),
 });
@@ -313,7 +312,7 @@ test('actual app Ctrl+n/p routing commits FORM before moving or hitting an entry
       e.api.clickSlotId('b');
       e.key('f');
       for (const char of buffer) e.key(char);
-      const router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation, editors.map(e => e.api), index);
+      const router = appNavigation(matchesKeyboardInput, editors.map(e => e.api), index);
       let prevented = false;
       router.handleKeydown({ key: input, target: null, ctrlKey: true, repeat, preventDefault() { prevented = true; } });
       assert.equal(prevented, true);
@@ -342,7 +341,7 @@ test('app Ctrl+n/p follows native key repeats one entry at a time and clamps at 
   ]) {
     const editors = Array.from({ length: 4 }, () => setup());
     for (const editor of editors) editor.api.clickSlotId('b');
-    const router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation, editors.map(e => e.api), initialIndex);
+    const router = appNavigation(matchesKeyboardInput, editors.map(e => e.api), initialIndex);
     for (const [index, expected] of expectedIndices.entries()) {
       let prevented = false;
       router.handleKeydown({ key, target: null, ctrlKey: true, repeat: index > 0,
@@ -355,13 +354,14 @@ test('app Ctrl+n/p follows native key repeats one entry at a time and clamps at 
   }
 });
 
-test('app Ctrl+n/p settles an empty composite before leaving, but not at a boundary or with a marker', () => {
+test('app Ctrl+n/p closes transient basic-group editing without history; persisted composites remain', () => {
   function opened(marked = false) {
     const editor = setup(createExampleDocument());
     const group = editor.api.snapshot().document.groups[0];
     editor.api.clickSlotId(group.slotId);
     editor.key('k');
-    assert.equal(editor.api.snapshot().document.groups[0].kind, 'composite');
+    assert.equal(editor.api.snapshot().document.groups[0].kind, 'basic');
+    assert.equal(editor.display().openedGroupIds.has(group.id), true);
     if (marked) {
       editor.key('s');
       editor.api.finishMarkerInput();
@@ -373,32 +373,34 @@ test('app Ctrl+n/p settles an empty composite before leaving, but not at a bound
     const source = opened();
     const other = setup();
     const editors = sourceIndex === 0 ? [source, other] : [other, source];
-    const router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation,
+    const router = appNavigation(matchesKeyboardInput,
       editors.map(editor => editor.api), sourceIndex);
     router.handleKeydown({ key, target: null, ctrlKey: true, preventDefault() {} });
     assert.equal(source.api.snapshot().document.groups[0].kind, 'basic');
+    assert.equal(source.display().openedGroupIds.size, 0);
     source.key('u');
-    assert.equal(source.api.snapshot().document.groups[0].kind, 'composite');
+    assert.equal(source.api.snapshot().document.groups[0].kind, 'basic');
     source.key('r', { ctrlKey: true });
     assert.equal(source.api.snapshot().document.groups[0].kind, 'basic');
   }
 
   const marked = opened(true);
-  let router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation,
+  let router = appNavigation(matchesKeyboardInput,
     [marked.api, setup().api], 0);
   router.handleKeydown({ key: 'n', target: null, ctrlKey: true, preventDefault() {} });
   assert.equal(marked.api.snapshot().document.groups[0].kind, 'composite');
 
   const boundary = opened();
-  router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation,
+  router = appNavigation(matchesKeyboardInput,
     [setup().api, boundary.api], 1);
   router.handleKeydown({ key: 'n', target: null, ctrlKey: true, preventDefault() {} });
-  assert.equal(boundary.api.snapshot().document.groups[0].kind, 'composite');
+  assert.equal(boundary.api.snapshot().document.groups[0].kind, 'basic');
+  assert.equal(boundary.display().openedGroupIds.size, 1);
 });
 
 test('app suppresses repeated Alt+j/k reorder in NORMAL mode', () => {
   const editors = [setup(), setup(), setup()];
-  const router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation, editors.map(e => e.api), 1);
+  const router = appNavigation(matchesKeyboardInput, editors.map(e => e.api), 1);
   for (const key of ['j', 'k']) {
     let prevented = false;
     // The router stub throws if swapEntry is called.
@@ -413,7 +415,7 @@ test('app rejects modified/composing entry commands and FORM reorder without com
   const editors = [setup(), setup()];
   const e = editors[0];
   e.key('f'); e.key('p');
-  const router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation, editors.map(e => e.api), 0);
+  const router = appNavigation(matchesKeyboardInput, editors.map(e => e.api), 0);
   for (const extra of [{ isComposing: true }, { keyCode: 229 },
     { altKey: true }, { shiftKey: true }, { metaKey: true }]) {
     router.handleKeydown({ key: 'n', target: null, ctrlKey: true, preventDefault() {}, ...extra });
@@ -1069,6 +1071,7 @@ test('BORDER deletion removes neighboring pseudo tokens and their dependents but
     const left = d.splits[0].leftSlotId;
     d.groups.push({ id: 'dependent', slotId: 'dependent-slot', kind: 'composite', slots: [left, 'b'] });
     d.slots.push({ id: 'dependent-slot' });
+    d = reclassifyGroups(d);
     const editor = setup(d);
     const { api, key, display, records } = editor;
     key('b'); key('l');
@@ -1616,7 +1619,7 @@ test('configured entry movement competes with cursor movement through the actual
   applySettings(settings);
   try {
     const editors = [setup(), setup()];
-    const router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation, editors.map(e => e.api), 0);
+    const router = appNavigation(matchesKeyboardInput, editors.map(e => e.api), 0);
     router.handleKeydown({ key: 'l', target: null, preventDefault() {} });
     assert.equal(router.activeIndex(), 0);
     assert.equal(editors[0].api.snapshot().cursor.x, 1);
@@ -1771,7 +1774,7 @@ test('marker prefixes without an editable target or complete match change neithe
 test('entry movement commits marker input before moving and also exits at a missing destination', () => {
   for (const count of [1, 2]) {
     const editors = Array.from({ length: count }, () => setup());
-    const router = appNavigation(entryShortcut, matchesKeyboardInput, resolveKeyboardOperation, editors.map(e => e.api), 0);
+    const router = appNavigation(matchesKeyboardInput, editors.map(e => e.api), 0);
     editors[0].key('a');
     router.handleKeydown({ key: 'p', ctrlKey: true, target: null, preventDefault() {} });
     assert.equal(router.activeIndex(), 0);

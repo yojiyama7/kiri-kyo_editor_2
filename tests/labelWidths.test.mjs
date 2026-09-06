@@ -13,7 +13,7 @@ const markerId = (sequence) => DEFAULT_MARKER_INPUT_BINDINGS.find(binding => bin
 
 function document(words = 'a b c d', specs = [['g', ['b', 'c'], 'ado']]) {
   const tokens = words.split(' ').map((text) => ({ id: `token:${text}`, text, slotId: text }));
-  return { version: 6, tokens, slots: [
+  return { tokens, slots: [
     ...tokens.map(({ slotId: id }) => ({ id })), ...specs.map(([id, , marker]) => ({ id, ...(marker && { marker: markerId(marker) }) })),
   ], groups: specs.map(([slotId, slots]) => ({ id: `group:${slotId}`, slotId, slots,
     kind: slots.every((id) => tokens.some((token) => token.slotId === id)) ? 'basic' : 'composite' })),

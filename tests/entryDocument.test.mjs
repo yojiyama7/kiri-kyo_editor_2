@@ -9,26 +9,22 @@ import { EditHistory } from '../src/history.ts';
 import { splitSlot } from '../src/tEditing.ts';
 import { deleteGroup } from '../src/structureDeletion.ts';
 import { connectArrow } from '../src/arrowEditing.ts';
+import { readSavedDocument } from '../src/groupEditing.ts';
 
 const initial = () => {
   const entries = Array.from({ length: 3 }, () => createEntry(createExampleDocument()));
-  return { document: { version: 7, entries }, activeEntryId: entries[1].id, cursor: { x: 1, y: 1 } };
+  return { document: { version: 8, entries }, activeEntryId: entries[1].id, cursor: { x: 1, y: 1 } };
 };
 
-test('v5 migration preserves token, slot, structure and arrow IDs in a single entry', () => {
+test('unwrapped legacy documents are rejected instead of migrated', () => {
   let document = createExampleDocument();
   document.slots[0].marker = 'marker.adverb';
   document = connectArrow(document, document.slots[0].id, document.slots[1].id);
   document = splitSlot(document, document.tokens[0].slotId);
-  const migrated = readEntryDocument(JSON.parse(JSON.stringify(document)));
-  assert.equal(migrated.version, 7);
-  assert.equal(migrated.entries.length, 1);
-  assert.ok(migrated.entries[0].id);
-  assert.deepEqual(migrated.entries[0].document, document);
-  assert.equal(isEntryDocument(migrated), true);
+  assert.equal(readEntryDocument(JSON.parse(JSON.stringify(document))), undefined);
 });
 
-test('v6 reload preserves entry order, IDs, translations, and independent structures', () => {
+test('v8 reload preserves entry order, IDs, translations, and independent structures', () => {
   const state = initial();
   state.document.entries[0].document.translation = 'first';
   state.document.entries[2].document = splitSlot(state.document.entries[2].document, state.document.entries[2].document.tokens[0].slotId);
@@ -41,9 +37,9 @@ test('unsupported formats and invalid entry containers are rejected', () => {
     assert.equal(readEntryDocument(legacy), undefined);
   }
   const state = initial();
-  for (const invalid of [null, {}, [], { version: 7 }, { version: 7, entries: [] },
-    { version: 7, entries: [null] }, { version: 7, entries: [{ id: '', document: createExampleDocument() }] },
-    { version: 7, entries: [state.document.entries[0], state.document.entries[0]] }]) {
+  for (const invalid of [null, {}, [], { version: 8 }, { version: 8, entries: [] },
+    { version: 8, entries: [null] }, { version: 8, entries: [{ id: '', document: createExampleDocument() }] },
+    { version: 8, entries: [state.document.entries[0], state.document.entries[0]] }]) {
     assert.equal(readEntryDocument(invalid), undefined);
   }
 });
@@ -51,13 +47,13 @@ test('unsupported formats and invalid entry containers are rejected', () => {
 test('old schema versions and key-derived marker or form values are rejected without migration', () => {
   const current = createExampleDocument();
   assert.equal(readEntryDocument({ ...current, version: 5 }), undefined);
-  assert.equal(readEntryDocument({ version: 6, entries: [{ id: 'old', document: current }] }), undefined);
+  assert.equal(readEntryDocument({ version: 7, entries: [{ id: 'old', document: { ...current, version: 6 } }] }), undefined);
   const oldMarker = structuredClone(current);
   oldMarker.slots[0].marker = 's';
-  assert.equal(readEntryDocument(oldMarker), undefined);
+  assert.equal(readEntryDocument({ version: 8, entries: [{ id: 'entry', document: oldMarker }] }), undefined);
   const oldForm = structuredClone(current);
   oldForm.tokens[0].form = 'pp';
-  assert.equal(readEntryDocument(oldForm), undefined);
+  assert.equal(readEntryDocument({ version: 8, entries: [{ id: 'entry', document: oldForm }] }), undefined);
 });
 
 test('cross-entry group, arrow, T and token references are rejected', () => {
@@ -127,10 +123,13 @@ test('bulk insertion retains all existing structures and inserts independent ent
     assert.deepEqual(document.splits, []);
     assert.deepEqual(document.arrows, []);
     assert.equal(document.translation, '');
-    assert.equal(document.version, 6);
+    assert.equal(Object.hasOwn(document, 'version'), false);
   }
   assert.equal(isEntryDocument(after.document), true);
-  assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(after.document))), after.document);
+  const normalized = { ...after.document, entries: after.document.entries.map(entry => ({ ...entry,
+    document: readSavedDocument(entry.document),
+  })) };
+  assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(after.document))), normalized);
 });
 
 test('bulk insertion works after the first, last, and only empty entry', () => {
@@ -143,7 +142,7 @@ test('bulk insertion works after the first, last, and only empty entry', () => {
       .map(({ document }) => document.tokens[0].text), ['First.', 'Second.']);
   }
   const empty = createEntry();
-  const before = { document: { version: 7, entries: [empty] }, activeEntryId: empty.id, cursor: { x: 0, y: 0 } };
+  const before = { document: { version: 8, entries: [empty] }, activeEntryId: empty.id, cursor: { x: 0, y: 0 } };
   const after = insertEnglishEntries(before, empty.id, 'First.\nSecond.');
   assert.equal(after.document.entries.length, 3);
   assert.deepEqual(after.document.entries[0], empty);
@@ -187,7 +186,7 @@ test('deleting active entries selects the following entry, or the previous at th
 
 test('deleting the final entry leaves a new empty entry and undo restores all original data', () => {
   const entry = createEntry(createExampleDocument());
-  const before = { document: { version: 7, entries: [entry] }, activeEntryId: entry.id, cursor: { x: 1, y: 1 } };
+  const before = { document: { version: 8, entries: [entry] }, activeEntryId: entry.id, cursor: { x: 1, y: 1 } };
   const after = removeEntry(before, entry.id);
   assert.equal(after.document.entries.length, 1);
   assert.notEqual(after.activeEntryId, entry.id);

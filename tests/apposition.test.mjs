@@ -11,7 +11,7 @@ import { deleteGroup } from '../src/structureDeletion.ts';
 import { readEntryDocument } from '../src/entryDocument.ts';
 import { EditHistory } from '../src/history.ts';
 
-const initial = () => ({ version: 6, groups: [], splits: [], arrows: [], translation: '',
+const initial = () => ({ groups: [], splits: [], arrows: [], translation: '',
   tokens: [...'abcdefgh'].map((id) => ({ id: `token:${id}`, text: id, slotId: id })),
   slots: [...'abcdefgh'].map((id) => ({ id, marker: 'marker.noun' })),
 });
@@ -44,7 +44,7 @@ test('apposition starts only at its exact markers and accepts those markers or e
     assert.equal(connectApposition(d, a, b), d);
   }
   const plus = connectApposition(mark(initial(), 'a', 'marker.plus'), 'a', 'b');
-  const saved = { version: 7, entries: [{ id: 'entry', document: plus }] };
+  const saved = { version: 8, entries: [{ id: 'entry', document: plus }] };
   assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(saved))), saved);
 });
 
@@ -123,7 +123,7 @@ test('deleting a group removes incident apposition without cascading into its ot
   }
 });
 
-test('replacement and deletion each form one undo step and round-trip through v5/v6', () => {
+test('replacement and deletion each form one undo step and round-trip through v8', () => {
   const d = connectApposition(connectApposition(initial(), 'a', 'b'), 'c', 'd');
   const next = connectApposition(d, 'b', 'c');
   const history = new EditHistory();
@@ -138,8 +138,8 @@ test('replacement and deletion each form one undo step and round-trip through v5
   assert.deepEqual(history.undo(), after);
   assert.deepEqual(history.redo(), deleted);
   const json = (value) => JSON.parse(JSON.stringify(value));
-  assert.deepEqual(readEntryDocument(json(next)).entries[0].document, next);
-  const wrapped = { version: 7, entries: [{ id: 'entry', document: next }] };
+  assert.equal(readEntryDocument(json(next)), undefined);
+  const wrapped = { version: 8, entries: [{ id: 'entry', document: next }] };
   assert.deepEqual(readEntryDocument(json(wrapped)), wrapped);
   const crossEntry = json(wrapped);
   crossEntry.entries[0].document.arrows[0].targetSlotId = 'other-entry-slot';

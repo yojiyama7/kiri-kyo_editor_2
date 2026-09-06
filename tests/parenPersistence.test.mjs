@@ -8,91 +8,57 @@ import { parseRecovery } from '../src/entryPersistence.ts';
 import { createPersistenceStore } from '../src/persistenceStore.ts';
 import { connectArrow } from '../src/arrowEditing.ts';
 
-const legacy = () => ({ version: 6, translation: '訳', groups: [], splits: [], arrows: [],
+const current = () => ({ translation: '訳', groups: [], splits: [], arrows: [],
   tokens: [
-    { id: 'open', kind: 'paren-open', text: '(' },
+    { id: 'open', kind: 'paren-open', text: '(', slotId: 'open-slot' },
     { id: 'word', text: 'word', slotId: 'word-slot' },
     { id: 'close', kind: 'paren-close', text: ')' },
-  ], slots: [{ id: 'word-slot' }],
+  ], slots: [{ id: 'open-slot' }, { id: 'word-slot' }],
 });
-const entries = document => ({ version: 7, entries: [{ id: 'entry', document }] });
+const entries = document => ({ version: 8, entries: [{ id: 'entry', document }] });
 const batch = document => ({ session: 'recovery', sequence: 1,
   changes: [{ id: 'entry', generation: 1, entry: { id: 'entry', document } }],
   order: { generation: 1, ids: ['entry'] },
 });
-const journal = document => JSON.stringify({ version: 2, batches: [batch(document)] });
+const journal = document => JSON.stringify({ version: 2, documentVersion: 8, batches: [batch(document)] });
 
-test('slotless parentheses migrate immutably through v5/v6 and remain stable on repeated reads', () => {
-  const old = legacy(), before = structuredClone(old);
-  assert.equal(isSavedState(old), false);
-  const migrated = readSavedDocument(old);
-  const id = migrated.tokens[0].slotId;
-  assert.equal(typeof id, 'string');
-  assert.deepEqual(migrated.slots, [...old.slots, { id }]);
-  assert.deepEqual(migrated.tokens.map(t => t.id), old.tokens.map(t => t.id));
-  assert.equal(migrated.tokens[2].slotId, undefined);
-  assert.equal(effectiveSlotMarker(migrated, id), 'marker.adverb');
-  assert.equal(isSavedState(migrated), true);
-  assert.deepEqual(old, before);
-  assert.deepEqual(readSavedDocument(old), migrated);
-  assert.equal(readSavedState(migrated), migrated);
-  for (const value of [old, entries(old), migrated, entries(migrated)]) {
-    assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(value))).entries[0].document, migrated);
-  }
-  const connected = connectArrow(migrated, id, 'word-slot');
-  assert.equal(connected.arrows.length, 1);
-  assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(entries(connected)))), entries(connected));
+test('current parentheses round-trip unchanged and opening parentheses retain arrow semantics', () => {
+  const document = current();
+  assert.equal(isSavedState(document), true);
+  assert.equal(readSavedState(document), document);
+  assert.deepEqual(readSavedDocument(JSON.parse(JSON.stringify(document))), document);
+  assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(entries(document)))), entries(document));
+  assert.equal(effectiveSlotMarker(document, 'open-slot'), 'marker.adverb');
+  const connected = connectArrow(document, 'open-slot', 'word-slot');
+  assert.deepEqual(readEntryDocument(entries(connected)), entries(connected));
 });
 
-test('migration supports mixed old/new parentheses and avoids existing IDs', () => {
-  const old = legacy();
-  old.tokens.push({ id: 'new-open', kind: 'paren-open', text: '(', slotId: 'paren:open' });
-  old.slots.push({ id: 'paren:open' });
-  const migrated = readSavedState(old);
-  assert.equal(migrated.tokens[3].slotId, 'paren:open');
-  assert.notEqual(migrated.tokens[0].slotId, 'paren:open');
-  assert.equal(migrated.slots.length, 3);
-  assert.deepEqual(readSavedState(old), migrated);
-  assert.deepEqual(readSavedState(migrated), migrated);
+test('slotless legacy parentheses and inner document versions are rejected without migration', () => {
+  const slotless = current();
+  delete slotless.tokens[0].slotId;
+  slotless.slots.shift();
+  assert.equal(readSavedState(slotless), undefined);
+  assert.equal(readSavedDocument(slotless), undefined);
+  assert.equal(readEntryDocument(entries(slotless)), undefined);
+  assert.throws(() => parseRecovery(journal(slotless)));
+  assert.equal(readEntryDocument(entries({ ...current(), version: 7 })), undefined);
 });
 
-test('migration does not accept malformed brackets, duplicate owners or dangling references', () => {
-  for (const mutate of [
-    d => { d.tokens[0].text = ')'; },
-    d => { d.tokens[0].form = 'form.base'; },
-    d => { d.tokens[0].slotId = ''; },
-    d => { d.tokens[0].slotId = null; },
-    d => { d.tokens[0].slotId = 'missing'; },
-    d => { d.tokens[0].slotId = 'word-slot'; },
-    d => { d.tokens[0].id = 'word'; },
-    d => { d.tokens[2].slotId = 'extra'; d.slots.push({ id: 'extra' }); },
-    d => { d.groups.push({ id: 'g', slotId: 'g', kind: 'composite', slots: ['paren:open'] }); d.slots.push({ id: 'g' }); },
-    d => { d.arrows.push({ sourceSlotId: 'paren:open', targetSlotId: 'word-slot' }); },
-  ]) {
-    const invalid = legacy(); mutate(invalid);
-    assert.equal(readSavedDocument(invalid), undefined);
-    assert.equal(readEntryDocument(entries(invalid)), undefined);
-    assert.throws(() => parseRecovery(journal(invalid)));
-  }
+test('current recovery and IndexedDB preserve selectable parentheses', async () => {
+  const initial = entries({ translation: '', groups: [], splits: [], arrows: [], tokens: [], slots: [] });
+  const store = createPersistenceStore(new IDBFactory());
+  const loaded = await store.load({ kind: 'load', initial, legacyRaw: null, recovery: [journal(current())] });
+  assert.deepEqual(loaded.document, entries(current()));
+  assert.equal(loaded.discardedLegacy, false);
+  assert.deepEqual(await store.read(), entries(current()));
+  assert.deepEqual(parseRecovery(journal(current())).batches[0], batch(current()));
 });
 
-test('IndexedDB, legacy import and recovery replay all expose selectable parentheses', async () => {
-  for (const source of ['stored', 'v5', 'v6', 'recovery']) {
-    const store = createPersistenceStore(new IDBFactory());
-    const old = legacy();
-    if (source === 'stored') await store.write(batch(old));
-    const initial = entries({ version: 6, translation: '', groups: [], splits: [], arrows: [], tokens: [], slots: [] });
-    const loaded = await store.load({ kind: 'load', initial,
-      legacyRaw: source === 'v5' ? JSON.stringify(old) : source === 'v6' ? JSON.stringify(entries(old)) : null,
-      recovery: source === 'recovery' ? [journal(old)] : [],
-    });
-    assert.deepEqual(loaded.entries[0].document, readSavedDocument(old));
-    if (source !== 'v5') assert.equal(loaded.entries[0].id, 'entry');
-    assert.deepEqual(await store.read(), loaded);
-    if (source === 'recovery') {
-      const parsed = parseRecovery(journal(old));
-      assert.deepEqual(parsed.batches[0].changes[0].entry, loaded.entries[0]);
-      assert.deepEqual(await store.load({ kind: 'load', initial, legacyRaw: null, recovery: [journal(old)] }), loaded);
-    }
-  }
+test('old recovery format is discarded and initializes the sample', async () => {
+  const initial = entries(current());
+  const old = JSON.stringify({ version: 2, batches: [batch({ ...current(), version: 6 })] });
+  const store = createPersistenceStore(new IDBFactory());
+  const loaded = await store.load({ kind: 'load', initial, legacyRaw: null, recovery: [old] });
+  assert.deepEqual(loaded.document, initial);
+  assert.equal(loaded.discardedLegacy, true);
 });

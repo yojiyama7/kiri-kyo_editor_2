@@ -7,7 +7,7 @@ import { DEFAULT_MARKER_INPUT_BINDINGS } from '../src/inputConfig.ts';
 import { EditHistory } from '../src/history.ts';
 import { computeLayout, slotAt, groupForDeletion } from '../src/layout.ts';
 import { deleteGroup } from '../src/structureDeletion.ts';
-import { settleBasicGroups } from '../src/groupEditing.ts';
+import { reclassifyGroups } from '../src/groupEditing.ts';
 
 test('only empty direct base slots create a basic underline', () => {
   const tokens = ['a', 'b'].map((text) => ({ id: `token:${text}`, text, slotId: text }));
@@ -49,9 +49,7 @@ test('marker edits reclassify eligible composites without changing references', 
   const before = { document, cursor: { x: 1, y: 1 } };
   const after = structuredClone(before);
   after.document.slots = setSlotMarker(after.document.slots, document.tokens[1].slotId);
-  const normalized = settleBasicGroups(after.document, after.cursor);
-  after.document = normalized.document;
-  after.cursor = normalized.cursor;
+  after.document = reclassifyGroups(after.document);
   assert.equal(after.document.groups[0].kind, 'basic');
   assert.deepEqual(after.document.groups[0].slots, selected);
   assert.equal(isSavedState(after.document), true);
@@ -90,7 +88,7 @@ test('zero-row marker editing and deletion retain hidden token data through save
   assert.deepEqual(history.redo(), after);
 });
 
-test('v5 rejects missing or unknown kinds, old versions and invalid references', () => {
+test('current schema rejects missing or unknown kinds, inner versions and invalid references', () => {
   const mutations = [
     (s) => { s.version = 2; },
     (s) => { delete s.groups[0].kind; },

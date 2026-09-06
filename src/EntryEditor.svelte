@@ -18,12 +18,11 @@
   import { pseudoPreview, widthsByToken, inputOverlayOffset } from './pseudoPreview';
   import { measureLabels } from './labelMeasurements';
   import { type EditorSnapshot } from './history';
-  import { enterBasicGroup, settleBasicGroups } from './groupEditing';
-  import type { EntryEditorState } from './entryDocument';
-  import type { EntryInputMode } from './entryShortcuts';
+  import { enterBasicGroup, groupsForEditing, reclassifyGroups, settleOpenedGroups } from './groupEditing';
+  import type { EntryEditorState, EntryInputMode } from './entryDocument';
   import { markerFromText, markerLabel, setSlotMarker, type MarkerId } from './markers';
   import { customMarkerInputAction, type CustomMarkerInputSession } from './customMarkerEditing';
-  import { operationKeyLabel } from './inputConfig';
+  import { operationKeyLabel } from './keybindings';
   import {
     type Cursor,
     computeLayout,
@@ -105,12 +104,14 @@
   let markerBuffer = '';
   let markerSlotId: string | undefined;
   let markerStart: EditorSnapshot | null = null;
+  let openedGroupIds = new Set<string>();
 
-  $: layout = computeLayout(tokens, groups, splits, arrows);
-  $: preview = pseudoPreview({ version: 6, tokens, slots, groups, splits, arrows, translation }, pseudoInput);
+  $: editingGroups = groupsForEditing(groups, openedGroupIds);
+  $: layout = computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows);
+  $: preview = pseudoPreview({ tokens, slots, groups, splits, arrows, translation }, pseudoInput);
   $: displayTokens = preview.document.tokens;
   $: inputTokenId = preview.inputTokenId;
-  $: displayLayout = computeLayout(displayTokens, groups, splits, arrows);
+  $: displayLayout = computeLayout(displayTokens, editingGroups, splits, arrows);
   $: allFormTargets = formTargets(preview.document);
   $: visibleFormIds = new Set(visibleFormTargets(preview.document, displayLayout).map(target => target.slotId));
   $: tokenWidths = widthsByToken(displayTokens, tokenWidthById);
@@ -125,7 +126,7 @@
     ?? (markerBuffer && markerSlotId === currentId ? markerSlotId : undefined);
   $: pendingMarkerText = customMarkerInput ? customMarkerInput.text || ' ' : markerBuffer;
   $: measurements = measureLabels(displayTokens, preview.document.slots, groups, splits, arrows, pendingMarkerSlotId, pendingMarkerText);
-  $: renderLayout = computeRenderLayout(displayTokens, groups, splits, tokenWidths, diagramWidth,
+  $: renderLayout = computeRenderLayout(displayTokens, editingGroups, splits, tokenWidths, diagramWidth,
     groupLabelWidths, pendingMarkerSlotId ? { slotId: pendingMarkerSlotId, x: cursorX }
       : formSession && groups.some(group => group.slotId === formSession?.slotId) && !splitBySource.has(formSession.slotId)
         ? { slotId: formSession.slotId, x: cursorX } : undefined,
@@ -201,6 +202,7 @@
     customMarkerInput,
     pseudoMessage,
     formSession,
+    openedGroupIds,
     formRegions,
     previewDocument: pseudoInput ? preview.document : null,
     displayLayout,
@@ -210,7 +212,7 @@
     customMarkerInputWidth,
     customMarkerInputOffset,
     textEditing: inputStart !== null || pseudoInput !== null || customMarkerInput !== null || formSession !== null,
-    document: { version: 6, tokens, slots, groups, splits, arrows, translation },
+    document: { tokens, slots, groups, splits, arrows, translation },
     layout,
     diagramWidth,
     tokenWidths,
@@ -221,7 +223,7 @@
     displayRows,
   });
   $: onstate({
-    snapshot: { document: { version: 6, tokens, slots, groups, splits, arrows, translation }, cursor: snapshotCursor },
+    snapshot: { document: { tokens, slots, groups, splits, arrows, translation }, cursor: snapshotCursor },
     mode, pendingMarker: markerStart !== null, getDisplay,
   });
 
@@ -401,13 +403,13 @@
   function insertRegionBracket(text: BracketText) {
     pseudoMessage = '';
     const before = snapshot();
-    const beforeLayout = computeLayout(tokens, groups, splits, arrows);
+    const beforeLayout = computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows);
     const border = bracketBorderFromRegion(tokens, beforeLayout, before.cursor, text);
     if (!border.ok) { pseudoMessage = border.message; return; }
     const result = insertBracket(before.document, border.index, text);
     if (!result.ok) { pseudoMessage = result.message; return; }
     const next = result.document;
-    const nextLayout = computeLayout(next.tokens, next.groups, next.splits, next.arrows);
+    const nextLayout = computeLayout(next.tokens, groupsForEditing(next.groups, openedGroupIds), next.splits, next.arrows);
     const slotId = slotAt(beforeLayout, before.cursor.x, before.cursor.y)!;
     const atom = beforeLayout.atoms[before.cursor.x];
     // Insertion preserves each existing token's cuts. Anchor within that token:
@@ -459,11 +461,11 @@
       next = result.document;
       borderIndex = session.borderIndex + inserted.length;
       mode = 'BORDER';
-      cursor = cursorFromBorder(computeLayout(next.tokens, next.groups, next.splits, next.arrows), borderIndex);
+      cursor = cursorFromBorder(computeLayout(next.tokens, groupsForEditing(next.groups, openedGroupIds), next.splits, next.arrows), borderIndex);
     } else {
       next = editPseudoToken(session.before.document, session.tokenId, session.text);
       const index = session.before.document.tokens.findIndex((token) => token.id === session.tokenId);
-      cursor = session.text === '' ? cursorFromBorder(computeLayout(next.tokens, next.groups, next.splits, next.arrows), index)
+      cursor = session.text === '' ? cursorFromBorder(computeLayout(next.tokens, groupsForEditing(next.groups, openedGroupIds), next.splits, next.arrows), index)
         : session.before.cursor;
       mode = 'NORMAL';
     }
@@ -490,14 +492,14 @@
   }
 
   export function snapshot(): EditorSnapshot {
-    const currentLayout = computeLayout(tokens, groups, splits, arrows);
+    const currentLayout = computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows);
     return structuredClone({
-      document: { version: 6, tokens, slots, groups, splits, arrows, translation },
+      document: { tokens, slots, groups, splits, arrows, translation },
       cursor: pseudoInput ? pseudoInput.before.cursor : mode === 'BORDER' ? cursorFromBorder(currentLayout, borderIndex) : nearestCursor(currentLayout, { x: cursorX, y: cursorY }),
     });
   }
 
-  export function restore(state: EditorSnapshot, settle = true) {
+  export function restore(state: EditorSnapshot, _settle = true) {
     cancelForm();
     // A restored normal cursor must not be replaced by a stale border index.
     if (mode === 'BORDER' || mode === 'PSEUDO_INPUT' || mode === 'MARKER_INPUT' || mode === 'MARKER_SEQUENCE') mode = 'NORMAL';
@@ -509,12 +511,13 @@
     markerStart = null;
     markerSlotId = undefined;
     markerBuffer = '';
+    openedGroupIds = new Set();
     // Inactive entries can retain an open basic group from an earlier edit.
     // Restoring another entry must not reclassify their saved structures.
-    const result = settle ? settleBasicGroups(state.document, state.cursor) : state;
-    ({ tokens, slots, groups, splits, arrows, translation } = result.document);
-    cursorX = result.cursor.x;
-    cursorY = result.cursor.y;
+    const document = reclassifyGroups(state.document);
+    ({ tokens, slots, groups, splits, arrows, translation } = document);
+    cursorX = state.cursor.x;
+    cursorY = state.cursor.y;
     sentenceDraft = sentenceFromTokens();
     enterNormal();
   }
@@ -536,7 +539,7 @@
     pseudoMessage = '';
     const wasTranslation = mode === 'TRANSLATION';
     if (mode === 'BORDER') {
-      const cursor = cursorFromBorder(computeLayout(tokens, groups, splits, arrows), borderIndex);
+      const cursor = cursorFromBorder(computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows), borderIndex);
       cursorX = cursor.x;
       cursorY = cursor.y;
     }
@@ -548,7 +551,7 @@
       history.record(inputStart, snapshot());
       inputStart = null;
     }
-    const normalCursor = nearestCursor(computeLayout(tokens, groups, splits, arrows), { x: cursorX, y: cursorY });
+    const normalCursor = nearestCursor(computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows), { x: cursorX, y: cursorY });
     cursorX = normalCursor.x;
     cursorY = normalCursor.y;
     mode = 'NORMAL';
@@ -571,44 +574,44 @@
   function moveVertical(direction: -1 | 1) {
     if (mode !== 'NORMAL' && mode !== 'VISUAL_MULTI' && mode !== 'ARROW') return;
     if (direction === -1) {
-      const result = enterBasicGroup(snapshot().document, { x: cursorX, y: cursorY });
-      navigate(result.cursor, result.document);
+      const result = enterBasicGroup(snapshot().document, { x: cursorX, y: cursorY }, openedGroupIds);
+      openedGroupIds = result.openedGroupIds;
+      navigate(result.cursor);
     } else {
-      navigate(getVerticalCursor(computeLayout(tokens, groups, splits, arrows), { x: cursorX, y: cursorY }, direction));
+      navigate(getVerticalCursor(computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows), { x: cursorX, y: cursorY }, direction));
     }
   }
 
   function moveToRowEdge(edge: 'start' | 'end') {
-    navigate(getRowEdgeCursor(computeLayout(tokens, groups, splits, arrows), { x: cursorX, y: cursorY }, edge));
+    navigate(getRowEdgeCursor(computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows), { x: cursorX, y: cursorY }, edge));
   }
 
   function settleCursor() {
-    const result = settleBasicGroups(snapshot().document, { x: cursorX, y: cursorY }, anchor);
-    groups = result.document.groups;
+    const result = settleOpenedGroups(snapshot().document, { x: cursorX, y: cursorY }, anchor, openedGroupIds);
     cursorX = result.cursor.x;
     cursorY = result.cursor.y;
     anchor = result.anchor;
+    openedGroupIds = result.openedGroupIds;
   }
 
   function navigate(cursor: Cursor, document?: SavedState) {
-    const targetLayout = document ? computeLayout(document.tokens, document.groups, document.splits, document.arrows)
-      : computeLayout(tokens, groups, splits, arrows);
+    const targetLayout = document ? computeLayout(document.tokens, groupsForEditing(document.groups, openedGroupIds), document.splits, document.arrows)
+      : computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows);
     const targetId = slotAt(targetLayout, cursor.x, cursor.y);
     finishMarkerInput();
     const before = snapshot();
-    const next = document ?? before.document;
-    const nextLayout = computeLayout(next.tokens, next.groups, next.splits, next.arrows);
+    const next = document ? reclassifyGroups(document) : before.document;
+    const nextLayout = computeLayout(next.tokens, groupsForEditing(next.groups, openedGroupIds), next.splits, next.arrows);
     const destination = { ...cursor, y: (targetId ? nextLayout.slotY.get(targetId) : undefined) ?? cursor.y };
-    const result = settleBasicGroups(next, destination, anchor);
-    groups = result.document.groups;
-    cursorX = result.cursor.x;
-    cursorY = result.cursor.y;
-    anchor = result.anchor;
+    ({ tokens, slots, groups, splits, arrows, translation } = next);
+    cursorX = destination.x;
+    cursorY = destination.y;
+    settleCursor();
     history.record(before, snapshot());
   }
 
   function toggleCurrentSlot() {
-    individualSlots = toggleSlotSelection(computeLayout(tokens, groups, splits, arrows), individualSlots, { x: cursorX, y: cursorY });
+    individualSlots = toggleSlotSelection(computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows), individualSlots, { x: cursorX, y: cursorY });
   }
 
   function clickSlot(x: number, y: number) {
@@ -622,14 +625,16 @@
   }
 
   function currentSlotId(): string | undefined {
-    return slotAt(computeLayout(tokens, groups, splits, arrows), cursorX, cursorY);
+    return slotAt(computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows), cursorX, cursorY);
   }
 
   function applyDocument(next: SavedState, preferredId = currentSlotId()) {
-    const beforeLayout = computeLayout(tokens, groups, splits, arrows);
+    const beforeLayout = computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows);
     const oldCursor = { x: cursorX, y: cursorY };
+    next = reclassifyGroups(next);
     ({ tokens, slots, groups, splits, arrows, translation } = next);
-    const nextLayout = computeLayout(tokens, groups, splits, arrows);
+    openedGroupIds = new Set([...openedGroupIds].filter(id => groups.some(group => group.id === id && group.kind === 'basic')));
+    const nextLayout = computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows);
     const cursor = relocateCursor(beforeLayout, nextLayout, oldCursor, preferredId);
     if (anchor) anchor = relocateCursor(beforeLayout, nextLayout, anchor);
     cursorX = cursor.x;
@@ -639,7 +644,7 @@
 
   export function finishMarkerInput() {
     if (markerStart) {
-      applyDocument(pruneArrows(snapshot().document));
+      applyDocument(reclassifyGroups(pruneArrows(snapshot().document)));
       const after = snapshot();
       if (JSON.stringify(markerStart.document) !== JSON.stringify(after.document)) history.record(markerStart, after);
     }
@@ -784,7 +789,7 @@
       onundo(false);
       return;
     }
-    const navigationLayout = computeLayout(tokens, groups, splits, arrows);
+    const navigationLayout = computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows);
 
     const bracketText = bracketTextForOperation(operation);
     if (mode === 'NORMAL' && bracketText !== undefined) {
@@ -967,17 +972,14 @@
   }
 
   export function settleGroupsBeforeEntryMove() {
-    const before = snapshot();
-    const result = settleBasicGroups(before.document, before.cursor, null, true);
-    if (result.document === before.document) return;
-    groups = result.document.groups;
+    const result = settleOpenedGroups(snapshot().document, { x: cursorX, y: cursorY }, null, openedGroupIds, true);
     cursorX = result.cursor.x;
     cursorY = result.cursor.y;
-    history.record(before, snapshot());
+    openedGroupIds = result.openedGroupIds;
   }
 
   export function selectFirst() {
-    const cursor = nearestCursor(computeLayout(tokens, groups, splits, arrows), { x: 0, y: 0 });
+    const cursor = nearestCursor(computeLayout(tokens, groupsForEditing(groups, openedGroupIds), splits, arrows), { x: 0, y: 0 });
     cursorX = cursor.x;
     cursorY = cursor.y;
   }

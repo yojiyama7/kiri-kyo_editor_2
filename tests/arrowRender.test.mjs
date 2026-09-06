@@ -6,7 +6,7 @@ import { renderArrows } from '../src/arrowRender.ts';
 import { connectArrow, connectApposition, deleteArrow } from '../src/arrowEditing.ts';
 import { splitSlot } from '../src/tEditing.ts';
 
-const initial = () => ({ version: 6, arrows: [], splits: [], groups: [], translation: '',
+const initial = () => ({ arrows: [], splits: [], groups: [], translation: '',
   tokens: [...'abcdefgh'].map((text) => ({ id: `token:${text}`, text, slotId: text })),
   slots: [...'abcdefgh'].map((id) => ({ id, marker: 'marker.adverb' })),
 });

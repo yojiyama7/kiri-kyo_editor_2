@@ -7,14 +7,13 @@ import { computeLayout, slotAt, slotPosition, moveLeft, moveRight, moveToRowEdge
 import { cursorFromBorder } from '../src/borderNavigation.ts';
 import { computeRenderLayout, BRACKET_GUTTER, BRACKET_SLOT_MIN_WIDTH } from '../src/renderLayout.ts';
 import { renderArrows } from '../src/arrowRender.ts';
-import { settleBasicGroups } from '../src/groupEditing.ts';
 import { splitSlot } from '../src/tEditing.ts';
 import { readEntryDocument } from '../src/entryDocument.ts';
 import { insertPseudoToken, realSentence, replaceEnglishSentence } from '../src/pseudoEditing.ts';
 import { connectArrow, connectApposition } from '../src/arrowEditing.ts';
 import { setSlotMarker } from '../src/markers.ts';
 
-const initial = (words = ['a', 'b', 'c']) => ({ version: 6, translation: '訳文', groups: [], splits: [], arrows: [],
+const initial = (words = ['a', 'b', 'c']) => ({ translation: '訳文', groups: [], splits: [], arrows: [],
   tokens: words.map(text => ({ id: `token:${text}`, text, slotId: text })), slots: words.map(id => ({ id })) });
 const layoutOf = d => computeLayout(d.tokens, d.groups, d.splits, d.arrows);
 function insert(d, x, text) {
@@ -30,14 +29,13 @@ function group(d, ids) {
   return g;
 }
 
-test('brackets round-trip in v5/v6 without a dummy closing slot and never enter English source', () => {
+test('brackets round-trip in v8 without a dummy closing slot and never enter English source', () => {
   for (const words of [[], ['a', 'b', 'c']]) {
     const d = insert(insert(initial(words), 0, '['), words.length + 1, ']');
     assert.equal(d.slots.length, words.length + 1);
     assert.equal(d.tokens.at(-1).slotId, undefined);
-    for (const value of [d, { version: 7, entries: [{ id: 'entry', document: d }] }]) {
-      assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(value))).entries[0].document, d);
-    }
+    assert.equal(readEntryDocument(JSON.parse(JSON.stringify(d))), undefined);
+    assert.deepEqual(readEntryDocument({ version: 8, entries: [{ id: 'entry', document: d }] }).entries[0].document, d);
     assert.equal(realSentence(d.tokens), words.join(' '));
     assert.equal(replaceEnglishSentence(d, words.join(' ')), d);
     const replaced = replaceEnglishSentence(d, 'new sentence');
@@ -84,7 +82,6 @@ test('[ groups stay composite with a visible y=0 dedicated slot and cannot split
   assert.equal(hasBasicContents(d.tokens, d.slots, [opening, 'b']), false);
   const g = group(d, [opening, 'b']);
   assert.equal(g.kind, 'composite');
-  d = settleBasicGroups(d, { x: 0, y: 0 }, null, true).document;
   const layout = layoutOf(d);
   assert.equal(d.groups[0].kind, 'composite');
   assert.equal(layout.slotY.get(g.slotId), 1);
@@ -136,7 +133,7 @@ test('inserting any bracket preserves sparse groups, rejects broken T/D sources 
   assert.deepEqual(relocateCursor(before, after, slotPosition(before, opening)), { x: 1, y: 0 });
 });
 
-test('parentheses are non-basic brackets with a virtual opening slot and round-trip without forms in v5/v6', () => {
+test('parentheses are non-basic brackets with a virtual opening slot and round-trip without forms in v8', () => {
   for (const text of ['(', ')']) {
     for (const words of [[], ['a', 'b']]) {
       const before = initial(words);
@@ -150,9 +147,8 @@ test('parentheses are non-basic brackets with a virtual opening slot and round-t
       assert.equal(Object.hasOwn(token, 'slotId'), text === '(');
       assert.deepEqual(d.slots, text === '(' ? [...before.slots, { id: token.slotId }] : before.slots);
       assert.deepEqual(deleteBracket(d, 0), before);
-      for (const value of [d, { version: 7, entries: [{ id: 'entry', document: d }] }]) {
-        assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(value))).entries[0].document, d);
-      }
+      assert.equal(readEntryDocument(JSON.parse(JSON.stringify(d))), undefined);
+      assert.deepEqual(readEntryDocument({ version: 8, entries: [{ id: 'entry', document: d }] }).entries[0].document, d);
       assert.equal(realSentence(d.tokens), words.join(' '));
       assert.equal(replaceEnglishSentence(d, words.join(' ')), d);
       assert.ok(replaceEnglishSentence(d, 'new sentence').tokens.every(t => t.kind === 'real'));

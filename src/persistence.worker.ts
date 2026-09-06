@@ -18,9 +18,11 @@ worker.onmessage = ({ data: { id, request } }) => {
       } else if (request.kind === 'discard') {
         await store.discard();
         worker.postMessage({ id });
+      } else if (request.kind === 'load') {
+        const result = await store.load(request);
+        worker.postMessage({ id, ...result });
       } else {
-        const document = request.kind === 'load' ? await store.load(request) : await store.read();
-        worker.postMessage({ id, document });
+        worker.postMessage({ id, document: await store.read() });
       }
     } catch (error) { worker.postMessage({ id, error: String(error) }); }
   });

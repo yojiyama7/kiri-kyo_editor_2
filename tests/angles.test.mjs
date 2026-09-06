@@ -9,12 +9,11 @@ import { computeLayout, slotPosition, slotAt, moveLeft, moveRight, selectSlotRan
 import { computeRenderLayout, CLOSE_BRACKET_WIDTH } from '../src/renderLayout.ts';
 import { renderArrows } from '../src/arrowRender.ts';
 import { connectArrow, connectApposition, deleteArrow, pruneArrows } from '../src/arrowEditing.ts';
-import { settleBasicGroups } from '../src/groupEditing.ts';
 import { splitSlot } from '../src/tEditing.ts';
 import { setFormAtSlot } from '../src/formEditing.ts';
 import { measureLabels } from '../src/labelMeasurements.ts';
 
-const initial = () => ({ version: 6, translation: '', groups: [], splits: [], arrows: [],
+const initial = () => ({ translation: '', groups: [], splits: [], arrows: [],
   tokens: ['a', 'b', 'c'].map(text => ({ id: `token:${text}`, text, slotId: text })),
   slots: ['a', 'b', 'c'].map(id => ({ id })) });
 const layoutOf = d => computeLayout(d.tokens, d.groups, d.splits, d.arrows);
@@ -26,7 +25,7 @@ function addGroup(d, ids) {
   return group;
 }
 
-test(`${kind}: virtual brackets round-trip in v5/v6 with intrinsic ad and no editable label`, () => {
+test(`${kind}: virtual brackets round-trip in v8 with intrinsic ad and no editable label`, () => {
   const d = brackets();
   const open = d.tokens[1], close = d.tokens[3];
   assert.equal(open.kind, `${kind}-open`); assert.equal(close.kind, `${kind}-close`);
@@ -47,9 +46,8 @@ test(`${kind}: virtual brackets round-trip in v5/v6 with intrinsic ad and no edi
   const labels = measureLabels(d.tokens, d.slots, d.groups, d.splits, d.arrows);
   assert.deepEqual(labels.tokens[1].labels, ['']);
   const connected = connectArrow(d, open.slotId, 'b');
-  for (const value of [connected, { version: 7, entries: [{ id: 'entry', document: connected }] }]) {
-    assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(value))).entries[0].document, connected);
-  }
+  assert.equal(readEntryDocument(JSON.parse(JSON.stringify(connected))), undefined);
+  assert.deepEqual(readEntryDocument({ version: 8, entries: [{ id: 'entry', document: connected }] }).entries[0].document, connected);
   assert.equal(isSavedState(initial()), true);
   for (const mutate of [
     d => { d.slots.find(s => s.id === open.slotId).marker = 'marker.adverb'; },
@@ -92,7 +90,6 @@ test(`${kind}: underline creation excludes selected virtual brackets before clas
   const group = addGroup(d, [id, 'b']);
   assert.deepEqual(group.slots, ['b']);
   assert.equal(group.kind, 'basic');
-  d = settleBasicGroups(d, { x: 0, y: 0 }, null, true).document;
   assert.equal(d.groups[0].kind, 'basic');
   assert.equal(slotAt(layoutOf(d), 1, 0), id);
   assert.equal(isSavedState(d), true);
@@ -167,7 +164,7 @@ test(`${kind}: saved explicit membership still loads and deletes dependent group
   const child = addGroup(d, [id, 'b']);
   // Existing explicit memberships keep their saved structures.
   child.slots = [id, 'b']; child.kind = 'composite';
-  assert.deepEqual(readEntryDocument(d).entries[0].document, d);
+  assert.deepEqual(readEntryDocument({ version: 8, entries: [{ id: 'entry', document: d }] }).entries[0].document, d);
   d = splitSlot(d, child.slotId, 'd');
   addGroup(d, [d.splits[0].leftSlotId, 'c']);
   const next = deleteBracket(d, 1);

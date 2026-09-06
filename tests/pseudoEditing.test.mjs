@@ -8,11 +8,11 @@ import { readEntryDocument, insertEnglishEntries } from '../src/entryDocument.ts
 import { createExampleDocument } from '../src/example.ts';
 import { setSlotMarker } from '../src/markers.ts';
 import { connectArrow } from '../src/arrowEditing.ts';
-import { entryShortcut } from '../src/entryShortcuts.ts';
+import { resolveInput } from '../src/keybindings.ts';
 import { EditHistory } from '../src/history.ts';
 
 const initial = (words = ['a', 'b', 'c']) => ({
-  version: 6, translation: '', groups: [], splits: [], arrows: [],
+  translation: '', groups: [], splits: [], arrows: [],
   tokens: words.map(text => ({ id: `token:${text}`, text, slotId: text })),
   slots: words.map(id => ({ id })),
 });
@@ -199,13 +199,12 @@ test('create, update and cascade deletion each round-trip as one undo/redo step'
   }
 });
 
-test('legacy real and explicit real/pseudo kinds survive v5/v6 loading; unknown kinds are rejected', () => {
+test('explicit real/pseudo kinds survive v8 loading; unwrapped and unknown kinds are rejected', () => {
   const d = insert(initial(), 1);
   d.tokens[0].kind = 'real';
-  for (const value of [d, { version: 7, entries: [{ id: 'entry', document: d }] }]) {
-    const restored = readEntryDocument(JSON.parse(JSON.stringify(value)));
-    assert.deepEqual(restored.entries[0].document, d);
-  }
+  assert.equal(readEntryDocument(JSON.parse(JSON.stringify(d))), undefined);
+  const restored = readEntryDocument(JSON.parse(JSON.stringify({ version: 8, entries: [{ id: 'entry', document: d }] })));
+  assert.deepEqual(restored.entries[0].document, d);
   for (const kind of ['unknown', '', null, 3]) {
     const invalid = structuredClone(d);
     invalid.tokens[0].kind = kind;
@@ -219,7 +218,7 @@ test('English source includes only real tokens; all new English token paths tag 
   assert.equal(realSentence(d.tokens), 'a b c');
   assert.equal(realSentence([pseudo()]), '');
   assert.ok(createExampleDocument().tokens.every(t => t.kind === 'real'));
-  const state = { document: { version: 7, entries: [{ id: 'entry', document: initial() }] }, activeEntryId: 'entry', cursor: { x: 0, y: 0 } };
+  const state = { document: { version: 8, entries: [{ id: 'entry', document: initial() }] }, activeEntryId: 'entry', cursor: { x: 0, y: 0 } };
   const next = insertEnglishEntries(state, 'entry', 'new text');
   assert.ok(next.document.entries[1].document.tokens.every(t => t.kind === 'real'));
 });
@@ -254,7 +253,7 @@ test('composition flags, modifiers, and repeat protect IME and native text editi
   }
   for (const name of ['/', 'i', 'u', 'h', 'ArrowLeft', 'Backspace', 'Tab']) assert.equal(pseudoInputAction(key(name), false), undefined);
   for (const event of [key('n', { ctrlKey: true }), key('p', { ctrlKey: true }), key('j', { altKey: true }), key('k', { altKey: true })]) {
-    assert.equal(entryShortcut(event, 'PSEUDO_INPUT'), undefined);
+    assert.equal(resolveInput(event, { mode: 'PSEUDO_INPUT' }).winner, undefined);
   }
 });
 

@@ -4,11 +4,11 @@ import { createGroup, isSavedState } from '../src/model.ts';
 import { deleteGroup } from '../src/structureDeletion.ts';
 import { splitSlot, unsplitSlot } from '../src/tEditing.ts';
 import { computeLayout, normalizeCursorY, slotAt } from '../src/layout.ts';
-import { readSavedDocument, settleBasicGroups } from '../src/groupEditing.ts';
+import { readSavedDocument, reclassifyGroups } from '../src/groupEditing.ts';
 import { EditHistory } from '../src/history.ts';
 import { setSlotMarker } from '../src/markers.ts';
 
-const initial = () => ({ version: 6, arrows: [], splits: [], groups: [], translation: '訳',
+const initial = () => ({ arrows: [], splits: [], groups: [], translation: '訳',
   tokens: [...'abcd'].map((text) => ({ id: `token:${text}`, text, slotId: text })),
   slots: [...'abcd'].map((id) => ({ id })),
 });
@@ -21,7 +21,7 @@ function addGroup(document, slots) {
 const layoutOf = (document) => computeLayout(document.tokens, document.groups, document.splits);
 function assertRoundTrip(document) {
   assert.equal(isSavedState(document), true);
-  assert.deepEqual(readSavedDocument(JSON.parse(JSON.stringify(document))), document);
+  assert.deepEqual(readSavedDocument(JSON.parse(JSON.stringify(document))), reclassifyGroups(document));
   assert.doesNotThrow(() => layoutOf(document));
 }
 
@@ -106,10 +106,9 @@ test('cascade deletion is a single undo/redo step and its cursor remains valid a
   const before = { document, cursor: { x: 0, y: layout.slotY.get(source.slotId) } };
   const deleted = deleteGroup(document, source.id);
   const nextLayout = layoutOf(deleted);
-  const result = settleBasicGroups(deleted, { x: before.cursor.x,
+  const after = { document: reclassifyGroups(deleted), cursor: { x: before.cursor.x,
     y: normalizeCursorY(nextLayout, before.cursor.x, Math.max(0, before.cursor.y - 1)),
-  });
-  const after = { document: result.document, cursor: result.cursor };
+  } };
   assert.deepEqual(after.cursor, { x: 0, y: 0 });
   assert.equal(slotAt(layoutOf(after.document), after.cursor.x, after.cursor.y), 'a');
   assertRoundTrip(after.document);

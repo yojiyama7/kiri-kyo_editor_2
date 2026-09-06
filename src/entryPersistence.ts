@@ -9,13 +9,15 @@ export type SaveBatch = {
   changes: EntryChange[];
   order?: { generation: number; ids: string[] };
 };
-export type RecoveryJournal = { version: 2; batches: SaveBatch[] };
+export type RecoveryJournal = { version: 2; documentVersion: 8; batches: SaveBatch[] };
 export type PersistenceStatus = { pending: boolean; saving: boolean; error: string | null };
 
 /** Validate recovery data before replaying any of it. Invalid data stays on disk. */
 export function parseRecovery(raw: string): RecoveryJournal {
   const value = JSON.parse(raw) as RecoveryJournal;
-  if (value?.version !== 2 || !Array.isArray(value.batches)) throw new Error('終了時の退避データが不正です');
+  if (value?.version !== 2 || value.documentVersion !== 8 || !Array.isArray(value.batches)) {
+    throw new Error('終了時の退避データが不正です');
+  }
   for (const batch of value.batches) {
     if (!batch || typeof batch.session !== 'string' || !batch.session
       || !Number.isSafeInteger(batch.sequence) || batch.sequence < 1 || !Array.isArray(batch.changes)) {
@@ -23,7 +25,7 @@ export function parseRecovery(raw: string): RecoveryJournal {
     }
     const ids = new Set<string>();
     for (const change of batch.changes) {
-      const normalized = change?.entry && readEntryDocument({ version: 7, entries: [change.entry] });
+      const normalized = change?.entry && readEntryDocument({ version: 8, entries: [change.entry] });
       if (!change || typeof change.id !== 'string' || !change.id || ids.has(change.id)
         || !Number.isSafeInteger(change.generation) || change.generation < 1
         || (change.entry !== null && (change.entry?.id !== change.id
@@ -135,7 +137,7 @@ export function createEntryPersistence(
         if (changes.get(change.id)?.generation === change.generation) changes.delete(change.id);
       }
       const nextOrder = order?.generation === outstanding?.order?.generation ? undefined : order;
-      return { version: 2, batches: [
+      return { version: 2, documentVersion: 8, batches: [
         ...(outstanding ? [outstanding] : []),
         ...(changes.size || nextOrder ? [makeBatch([...changes.values()], nextOrder)] : []),
       ] };
@@ -149,4 +151,4 @@ export type PersistenceRequest =
   | { kind: 'write'; batch: SaveBatch }
   | { kind: 'discard' }
   | { kind: 'read' };
-export type PersistenceResponse = { id: number; document?: EntryDocument; error?: string };
+export type PersistenceResponse = { id: number; document?: EntryDocument; discardedLegacy?: boolean; error?: string };

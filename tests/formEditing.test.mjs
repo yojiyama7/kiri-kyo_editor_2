@@ -7,13 +7,12 @@ import { splitSlot, unsplitSlot } from '../src/tEditing.ts';
 import { insertBracket } from '../src/bracketEditing.ts';
 import { editPseudoToken, replaceEnglishSentence } from '../src/pseudoEditing.ts';
 import { readEntryDocument } from '../src/entryDocument.ts';
-import { writeChangedDocument } from '../src/documentPersistence.ts';
-import { entryShortcut } from '../src/entryShortcuts.ts';
-import { enterBasicGroup, settleBasicGroups } from '../src/groupEditing.ts';
+import { readSavedDocument } from '../src/groupEditing.ts';
+import { enterBasicGroup, groupsForEditing, settleOpenedGroups } from '../src/groupEditing.ts';
 import { deleteGroup } from '../src/structureDeletion.ts';
 
 const initial = () => ({
-  version: 6, translation: '', groups: [], splits: [], arrows: [],
+  translation: '', groups: [], splits: [], arrows: [],
   tokens: [{ id: 'real', slotId: 'r', text: 'go' }, { id: 'pseudo', slotId: 'p', text: 'be', kind: 'pseudo' }],
   slots: [{ id: 'r' }, { id: 'p' }],
 });
@@ -81,7 +80,7 @@ test('form targets share T owners, separate D halves and include basic groups', 
   }
 });
 
-test('form edits are immutable and idempotent, clear only form and round-trip through v5/v6 persistence', () => {
+test('form edits are immutable and idempotent, clear only form and round-trip through v8 persistence', () => {
   const original = initial();
   const before = structuredClone(original);
   for (const tokenId of ['real', 'pseudo']) {
@@ -91,11 +90,9 @@ test('form edits are immutable and idempotent, clear only form and round-trip th
       assert.equal(next.tokens.find(t => t.id === tokenId).form, form);
       assert.equal(isSavedState(next), true);
       assert.equal(setTokenForm(next, tokenId, form), next);
-      const written = [];
-      const result = writeChangedDocument({ version: 7, entries: [{ id: 'entry', document: next }] }, undefined, raw => written.push(raw));
-      assert.equal(result.status, 'saved');
-      assert.deepEqual(readEntryDocument(JSON.parse(written[0])).entries[0].document, next);
-      assert.deepEqual(readEntryDocument(next).entries[0].document, next);
+      const written = JSON.stringify({ version: 8, entries: [{ id: 'entry', document: next }] });
+      assert.deepEqual(readEntryDocument(JSON.parse(written)).entries[0].document, next);
+      assert.deepEqual(readSavedDocument(JSON.parse(JSON.stringify(next))), next);
       assert.deepEqual(setTokenForm(next, tokenId), original);
       assert.equal(Object.hasOwn(setTokenForm(next, tokenId).tokens.find(t => t.id === tokenId), 'form'), false);
     }
@@ -110,7 +107,7 @@ test('saved forms reject invalid values and annotated brackets; sentence regener
     const d = initial();
     d.tokens[0].form = form;
     assert.equal(isSavedState(d), false);
-    assert.equal(readEntryDocument(d), undefined);
+    assert.equal(readEntryDocument({ version: 8, entries: [{ id: 'entry', document: d }] }), undefined);
   }
   for (const bracket of ['[', ']', '(', ')']) {
     const d = insertBracket(initial(), 0, bracket).document;
@@ -121,14 +118,6 @@ test('saved forms reject invalid values and annotated brackets; sentence regener
   assert.equal(replaceEnglishSentence(d, 'go'), d);
   assert.ok(replaceEnglishSentence(d, 'went').tokens.every(t => t.form === undefined));
   assert.equal(editPseudoToken(d, 'pseudo', 'was').tokens[1].form, 'form.base');
-});
-
-test('FORM allows entry navigation and blocks reorder shortcuts', () => {
-  assert.equal(entryShortcut({ key: 'n', ctrlKey: true }, 'FORM'), 'entry.next');
-  assert.equal(entryShortcut({ key: 'p', ctrlKey: true }, 'FORM'), 'entry.previous');
-  for (const [key, code, modifier] of [['j', 'KeyJ', 'altKey'], ['k', 'KeyK', 'altKey'], ['∆', 'KeyJ', 'altKey'], ['˚', 'KeyK', 'altKey']]) {
-    assert.equal(entryShortcut({ key, code, [modifier]: true }, 'FORM'), undefined);
-  }
 });
 
 test('D moves the existing form left, edits and clears halves independently, and unsplit keeps left', () => {
@@ -154,7 +143,8 @@ test('D moves the existing form left, edits and clears halves independently, and
     assert.equal(formTargetAtSlot(cleared, right).form, 'form.ing');
     assert.equal(ownerForm(unsplitSlot(cleared, left), source), undefined);
     assert.equal(isSavedState(both), true);
-    assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(both))).entries[0].document, both);
+    assert.deepEqual(readEntryDocument({ version: 8, entries: [{ id: 'entry', document: JSON.parse(JSON.stringify(both)) }] }).entries[0].document,
+      readSavedDocument(both));
   }
 });
 
@@ -169,19 +159,20 @@ test('T has one form for either side and preserves it through split/unsplit and 
     assert.equal(formTargetAtSlot(next, left).form, 'form.past');
     assert.equal(formTargetAtSlot(next, right).form, 'form.past');
     assert.equal(ownerForm(unsplitSlot(next, right), source), 'form.past');
-    assert.deepEqual(readEntryDocument(JSON.parse(JSON.stringify(next))).entries[0].document, next);
+    assert.deepEqual(readEntryDocument({ version: 8, entries: [{ id: 'entry', document: JSON.parse(JSON.stringify(next)) }] }).entries[0].document,
+      readSavedDocument(next));
     assert.equal(setFormAtSlot(next, left).tokens.find(token => token.slotId === source)?.form, undefined);
     assert.equal(ownerForm(setFormAtSlot(next, left), source), undefined);
   }
 });
 
-test('legacy D forms migrate left once and new saved form fields are validated', () => {
+test('legacy D form placement is rejected and new saved form fields are validated', () => {
   const legacy = splitSlot(initial(), 'r', 'd');
   legacy.tokens[0].form = 'form.past';
-  const loaded = readEntryDocument(legacy).entries[0].document;
+  assert.equal(readEntryDocument({ version: 8, entries: [{ id: 'entry', document: legacy }] }), undefined);
+  const loaded = splitSlot(setTokenForm(initial(), 'real', 'form.past'), 'r', 'd');
   assert.equal(loaded.tokens[0].form, undefined);
   assert.equal(loaded.splits[0].leftForm, 'form.past');
-  assert.deepEqual(readEntryDocument(loaded).entries[0].document, loaded);
   for (const invalid of [null, '', 'past', 3, 'constructor']) {
     const d = structuredClone(loaded);
     d.splits[0].rightForm = invalid;
@@ -202,13 +193,15 @@ test('group forms survive internal editing and reload; deleting the group restor
   d.groups = [{ id: 'group', slotId: 'g', kind: 'basic', slots: ['r', 'p'], form: 'form.pastParticiple' }];
   d.slots.push({ id: 'g' });
   const opened = enterBasicGroup(d, { x: 0, y: 0 });
-  assert.equal(opened.document.groups[0].kind, 'composite');
-  assert.equal(opened.document.groups[0].form, 'form.pastParticiple');
-  assert.equal(formTargetAtSlot(opened.document, 'g'), undefined);
-  const closed = settleBasicGroups(opened.document, { x: 1, y: 1 }, null, true).document;
+  const editingGroups = groupsForEditing(d.groups, opened.openedGroupIds);
+  assert.equal(editingGroups[0].kind, 'composite');
+  assert.equal(d.groups[0].form, 'form.pastParticiple');
+  const closedState = settleOpenedGroups(d, { x: 1, y: 1 }, null, opened.openedGroupIds, true);
+  const closed = d;
+  assert.equal(closedState.openedGroupIds.size, 0);
   assert.equal(closed.groups[0].form, 'form.pastParticiple');
   assert.equal(closed.groups[0].kind, 'basic');
-  assert.equal(readEntryDocument(opened.document).entries[0].document.groups[0].form, 'form.pastParticiple');
+  assert.equal(readEntryDocument({ version: 8, entries: [{ id: 'entry', document: d }] }).entries[0].document.groups[0].form, 'form.pastParticiple');
   const deleted = deleteGroup(closed, 'group');
   assert.equal(deleted.groups.length, 0);
   assert.equal(deleted.tokens[0].form, 'form.past');

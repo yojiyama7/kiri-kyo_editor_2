@@ -6,7 +6,7 @@ import { createEntryPersistence, RECOVERY_PREFIX, LEGACY_STORAGE_KEY } from '../
 import { createEditorUpdates } from '../src/editorUpdates.ts';
 
 const entry = (id, text = '') => ({ id, document: {
-  version: 6, tokens: [], slots: [], groups: [], splits: [], arrows: [], translation: text,
+  tokens: [], slots: [], groups: [], splits: [], arrows: [], translation: text,
 } });
 const drain = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 let createApp;
@@ -24,7 +24,7 @@ before(() => {
       RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm } = dependencies;
     let entries = initial, activeEntryId = entries[0].id, rowStates = {}, ready = true, restoring = false;
     let openEntryMenuId = null;
-    let saveError = null, loadFailed = false, loading = false, destroyed = false;
+    let saveError = null, loadFailed = false, loading = false, destroyed = false, legacyDiscarded = false;
     const updates = createEditorUpdates({ debug() {}, save: saveCurrentEntry }, { setTimeout() {}, clearTimeout() {} });
     const tick = async () => {};
     const scrollToActive = async () => {};
@@ -56,7 +56,10 @@ function setup() {
     getItem(key) { return stored.get(key) ?? null; }, setItem(key, value) { stored.set(key, value); },
     removeItem(key) { stored.delete(key); },
   };
-  const client = { async send() { return { version: 7, entries: initial }; } };
+  const client = {
+    async load() { return { document: { version: 8, entries: initial }, discardedLegacy: false }; },
+    async send() { return undefined; },
+  };
   const history = { undo() {}, redo() {} };
   const app = createApp({ initial, editors, persistence, createEditorUpdates, storage, client, history,
     RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm: () => true });
@@ -117,22 +120,22 @@ test('initialization removes only recovered, unchanged journals and never replac
   app.unready();
   const key = RECOVERY_PREFIX + 'old-session';
   stored.set(key, 'old journal');
-  client.send = async request => {
+  client.load = async request => {
     assert.deepEqual(request.recovery, ['old journal']);
     stored.set(key, 'new journal');
-    return { version: 7, entries: [entry('restored')] };
+    return { document: { version: 8, entries: [entry('restored')] }, discardedLegacy: false };
   };
   await app.initialize();
   assert.equal(app.state().ready, true);
   assert.equal(app.state().entries[0].id, 'restored');
   assert.equal(stored.get(key), 'new journal');
   app.unready();
-  client.send = async () => { throw new Error('load failed'); };
+  client.load = async () => { throw new Error('load failed'); };
   await app.initialize();
   assert.equal(app.state().ready, false);
   assert.equal(app.state().entries[0].id, 'restored');
   assert.match(app.state().saveError, /load failed/);
-  client.send = async () => ({ version: 7, entries: initial });
+  client.load = async () => ({ document: { version: 8, entries: initial }, discardedLegacy: false });
   await app.initialize();
   assert.equal(stored.has(key), false);
 });
@@ -145,14 +148,14 @@ test('a failed load can discard IndexedDB, legacy data and every recovery journa
   stored.set(RECOVERY_PREFIX + 'two', 'other recovery');
   let failed = true;
   const requests = [];
-  client.send = async request => {
+  client.load = async request => {
     requests.push(request.kind);
-    if (request.kind === 'discard') return undefined;
     if (failed) { failed = false; throw new Error('以前の保存データを読み込めません。元のデータは保持しています'); }
     assert.equal(request.legacyRaw, null);
     assert.deepEqual(request.recovery, []);
-    return { version: 7, entries: initial };
+    return { document: { version: 8, entries: initial }, discardedLegacy: false };
   };
+  client.send = async request => { requests.push(request.kind); };
   await app.initialize();
   assert.equal(app.state().loadFailed, true);
   await app.discardSavedData();
@@ -166,8 +169,8 @@ test('actual Undo restores editor states and persists only changed entries; Redo
   const { app, states, requests, history, initial } = setup();
   states.a.document.translation = 'edited';
   app.receiveState('a', { snapshot: { document: states.a.document, cursor: { x: 0, y: 0 } }, pendingMarker: false });
-  history.undo = () => ({ document: { version: 7, entries: structuredClone(initial) }, activeEntryId: 'a', cursor: { x: 0, y: 0 } });
-  history.redo = () => ({ document: { version: 7, entries: [entry('a', 'edited'), entry('b')] }, activeEntryId: 'a', cursor: { x: 0, y: 0 } });
+  history.undo = () => ({ document: { version: 8, entries: structuredClone(initial) }, activeEntryId: 'a', cursor: { x: 0, y: 0 } });
+  history.redo = () => ({ document: { version: 8, entries: [entry('a', 'edited'), entry('b')] }, activeEntryId: 'a', cursor: { x: 0, y: 0 } });
   await app.undo(false);
   await drain();
   requests[0].resolve();

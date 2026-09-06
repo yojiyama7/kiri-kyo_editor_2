@@ -6,13 +6,13 @@ import { canSplit, splitSlot, unsplitSlot } from '../src/tEditing.ts';
 import { deleteGroup } from '../src/structureDeletion.ts';
 import { computeLayout, slotAt, slotPosition, moveLeft, moveRight, moveVertical, moveToRowEdge, selectSlotRange, toggleSlotSelection } from '../src/layout.ts';
 import { computeRenderLayout } from '../src/renderLayout.ts';
-import { enterBasicGroup, settleBasicGroups, readSavedDocument } from '../src/groupEditing.ts';
+import { enterBasicGroup, readSavedDocument, reclassifyGroups } from '../src/groupEditing.ts';
 import { setSlotMarker } from '../src/markers.ts';
 import { EditHistory } from '../src/history.ts';
 import { formTargetAtSlot } from '../src/formEditing.ts';
 import { readEntryDocument } from '../src/entryDocument.ts';
 
-const initial = () => ({ version: 6, arrows: [], tokens: [...'abcd'].map((text) => ({id:`token:${text}`, text, slotId:text})),
+const initial = () => ({ arrows: [], tokens: [...'abcd'].map((text) => ({id:`token:${text}`, text, slotId:text})),
   slots: [...'abcd'].map((id) => ({id})), groups: [], splits: [], translation: '訳' });
 const layoutOf = (d) => computeLayout(d.tokens, d.groups, d.splits);
 const addGroup = (d, ids) => {
@@ -34,7 +34,7 @@ test('T transfers the marker only to the left, preserving source identity and ex
   assert.deepEqual(next.groups[0], parent);
   assert.equal(marker(d, 'a'), 'marker.subject');
   assert.equal(isSavedState(next), true);
-  assert.equal(settleBasicGroups(next, {x:3,y:0}).document.groups[0].kind, 'composite');
+  assert.equal(reclassifyGroups(next).groups[0].kind, 'composite');
 });
 
 test('only tokens and continuous basic groups can be split, never children or composite/sparse groups', () => {
@@ -119,16 +119,16 @@ test('T contents stay composite through marker clearing, exit and reload; legacy
           const inside = slotPosition(layoutOf(document), contents[0]);
           const outside = slotPosition(layoutOf(document), group.slotId);
           for (const cursor of [inside, outside]) {
-            assert.equal(settleBasicGroups(document, cursor).document.groups.at(-1).kind, 'composite');
+            assert.equal(reclassifyGroups(document).groups.at(-1).kind, 'composite');
           }
           assert.deepEqual(readSavedDocument(JSON.parse(JSON.stringify(document))), document);
-          const entry = { version: 7, entries: [{ id: 'entry', document }] };
+          const entry = { version: 8, entries: [{ id: 'entry', document }] };
           assert.deepEqual(readEntryDocument(entry), entry);
           const invalid = structuredClone(document);
           invalid.groups.at(-1).kind = 'basic';
           assert.equal(isSavedState(invalid), false);
           assert.equal(readSavedDocument(invalid), undefined);
-          assert.equal(readEntryDocument({ version: 7, entries: [{ id: 'entry', document: invalid }] }), undefined);
+          assert.equal(readEntryDocument({ version: 8, entries: [{ id: 'entry', document: invalid }] }), undefined);
         }
       }
       // T elsewhere in the document must not disqualify empty D halves or words.
@@ -147,7 +147,7 @@ test('a split basic group keeps its Y and blocks internal editing on both halves
   const next=splitSlot(d,source.slotId); const l=layoutOf(next);
   for (const id of [next.splits[0].leftSlotId,next.splits[0].rightSlotId]) {
     const cursor=slotPosition(l,id); const entered=enterBasicGroup(next,cursor);
-    assert.equal(entered.document,next); assert.deepEqual(entered.cursor,cursor);
+    assert.equal(entered.openedGroupIds.size, 0); assert.deepEqual(entered.cursor,cursor);
   }
   assert.equal(at(l,moveRight(l,slotPosition(l,next.splits[0].leftSlotId))),next.splits[0].rightSlotId);
   assert.equal(at(l,moveRight(l,slotPosition(l,next.splits[0].rightSlotId))),'d');
@@ -190,7 +190,7 @@ test('creation and cascade removal each round-trip as a single history step incl
   history.record(ready,removed);assert.deepEqual(history.undo(),ready);assert.deepEqual(history.redo(),removed);
 });
 
-test('v5 saves round-trip T data; all old formats and malformed T references are rejected', () => {
+test('current saves round-trip T data; all versioned inner formats and malformed T references are rejected', () => {
   let d=initial();const source=addGroup(d,['a','b']);d=splitSlot(d,source.slotId);
   assert.deepEqual(readSavedDocument(JSON.parse(JSON.stringify(d))),d);
   for (const version of [1,2,3,4,5,undefined]) assert.equal(readSavedDocument({...d,version}),undefined);

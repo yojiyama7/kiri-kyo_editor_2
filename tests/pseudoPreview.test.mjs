@@ -8,7 +8,7 @@ import { splitSlot } from '../src/tEditing.ts';
 import { insertPseudoToken } from '../src/pseudoEditing.ts';
 import { measureLabels } from '../src/labelMeasurements.ts';
 
-const initial = (words = ['a', 'b', 'c']) => ({ version: 6, tokens: words.map(text => ({ id: text, slotId: `slot:${text}`, text })),
+const initial = (words = ['a', 'b', 'c']) => ({ tokens: words.map(text => ({ id: text, slotId: `slot:${text}`, text })),
   slots: words.map(text => ({ id: `slot:${text}` })), groups: [], splits: [], arrows: [], translation: '訳文' });
 const newSession = (document, index = 1, text = '') => ({ kind: 'create', borderIndex: index, text, composing: false,
   token: { id: 'pseudo', slotId: 'slot:pseudo', kind: 'pseudo', text: ' ' },

@@ -86,6 +86,14 @@ export function bindingLabel(binding: Binding): string {
   if (binding.kind === 'sequence') return binding.sequence;
   return [binding.ctrl && 'Ctrl', binding.alt && 'Alt', binding.meta && 'Meta', binding.shift && 'Shift', displayKeys[binding.key] ?? binding.key].filter(Boolean).join('+');
 }
+
+export function operationKeyLabels(operation: KeyboardOperationId): readonly string[] {
+  return operation === 'translation.blockTab' ? ['Tab'] : getSettings().bindings[operation as OperationId].map(bindingLabel);
+}
+
+export function operationKeyLabel(operation: KeyboardOperationId, separator = ' / '): string {
+  return operationKeyLabels(operation).join(separator) || '未割り当て';
+}
 function keyFromLabel(label: string): KeyStroke {
   const pieces = label.split('+');
   let key = pieces.pop()!;

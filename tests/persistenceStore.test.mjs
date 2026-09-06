@@ -5,31 +5,47 @@ import { createPersistenceStore } from '../src/persistenceStore.ts';
 import { createEntryPersistence } from '../src/entryPersistence.ts';
 
 const entry = (id, text = '') => ({ id, document: {
-  version: 6, tokens: [], slots: [], groups: [], splits: [], arrows: [], translation: text,
+  tokens: [], slots: [], groups: [], splits: [], arrows: [], translation: text,
 } });
-const document = (...entries) => ({ version: 7, entries });
+const document = (...entries) => ({ version: 8, entries });
 const change = value => ({ id: value.id, generation: 1, entry: value });
-const load = (store, initial, extras = {}) => store.load({ kind: 'load', initial, legacyRaw: null, recovery: [], ...extras });
+const loadResult = (store, initial, extras = {}) => store.load({ kind: 'load', initial, legacyRaw: null, recovery: [], ...extras });
+const load = async (store, initial, extras = {}) => (await loadResult(store, initial, extras)).document;
 
-test('initialization migrates legacy v5/v6 and prefers IndexedDB after successful migration', async () => {
-  for (const legacy of [entry('a', 'legacy').document, document(entry('a', 'legacy'), entry('b'))]) {
+test('legacy localStorage and IndexedDB are discarded and replaced with the sample', async () => {
+  for (const legacyRaw of [JSON.stringify({ ...entry('a', 'legacy').document, version: 5 }),
+    JSON.stringify({ version: 7, entries: [{ ...entry('a', 'legacy'), document: { ...entry('a', 'legacy').document, version: 6 } }] })]) {
     const store = createPersistenceStore(new IDBFactory());
-    const first = await load(store, document(entry('example')), { legacyRaw: JSON.stringify(legacy) });
-    assert.equal(first.entries[0].document.translation, 'legacy');
-    const second = await load(store, document(entry('different')), { legacyRaw: '{broken legacy data' });
-    assert.deepEqual(second, first);
+    const initial = document(entry('example'));
+    const first = await loadResult(store, initial, { legacyRaw });
+    assert.deepEqual(first, { document: initial, discardedLegacy: true });
   }
+  const store = createPersistenceStore(new IDBFactory());
+  const old = entry('seed', 'legacy');
+  old.document.version = 6;
+  await load(store, document(entry('seed')));
+  await store.write({ session: 'legacy', sequence: 1, changes: [change(old)] });
+  const initial = document(entry('replacement'));
+  assert.deepEqual(await loadResult(store, initial), { document: initial, discardedLegacy: true });
 });
 
-test('invalid legacy or recovery never initializes the database with the sample', async () => {
+test('malformed current recovery and storage errors preserve data instead of initializing the sample', async () => {
   for (const extras of [
-    { legacyRaw: '{' }, { legacyRaw: JSON.stringify({ version: 7, entries: [] }) },
     { legacyError: 'storage disabled' }, { recovery: ['{'] },
+    { recovery: [JSON.stringify({ version: 2, documentVersion: 8, batches: [{}] })] },
   ]) {
     const store = createPersistenceStore(new IDBFactory());
     await assert.rejects(load(store, document(entry('example')), extras));
     assert.equal(await store.read(), undefined);
   }
+  const store = createPersistenceStore(new IDBFactory());
+  const initial = document(entry('kept'));
+  await load(store, initial);
+  const malformed = entry('kept');
+  malformed.document.translation = 42;
+  await store.write({ session: 'bad', sequence: 1, changes: [change(malformed)] });
+  await assert.rejects(load(store, document(entry('replacement'))), /読み込めません/);
+  await assert.rejects(store.read(), /読み込めません/);
 });
 
 test('discard clears entries, metadata and receipts so the store can be initialized again', async () => {
@@ -126,7 +142,7 @@ test('an old uncertain request cannot resurrect a deleted entry', async () => {
   const old = { session: 'test', sequence: 1, changes: [change(entry('b', 'old'))] };
   await store.write(old);
   await store.write({ session: 'test', sequence: 2, changes: [{ id: 'b', entry: null, generation: 2 }], order: { generation: 2, ids: ['a'] } });
-  await load(store, initial, { recovery: [JSON.stringify({ version: 2, batches: [old] })] });
+  await load(store, initial, { recovery: [JSON.stringify({ version: 2, documentVersion: 8, batches: [old] })] });
   assert.deepEqual(await store.read(), document(entry('a')));
 });
 

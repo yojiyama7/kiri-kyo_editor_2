@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { matchesKeyboardInput } from '../src/keyboard.ts';
-import { KEYBOARD_OPERATION_IDS, isKeyboardOperationId, resolveKeyboardOperation } from '../src/keyboardOperations.ts';
-import { DEFAULT_FORM_INPUT_BINDINGS, DEFAULT_MARKER_INPUT_BINDINGS, operationKeyLabel } from '../src/inputConfig.ts';
+import { KEYBOARD_OPERATION_IDS, isKeyboardOperationId } from '../src/keyboardOperations.ts';
+import { DEFAULT_FORM_INPUT_BINDINGS, DEFAULT_MARKER_INPUT_BINDINGS } from '../src/inputConfig.ts';
+import { operationKeyLabel } from '../src/keybindings.ts';
 
 test('keyboard rules match scalar values, value lists, OR alternatives and AND fields', () => {
   const input = { key: '∆', code: 'KeyJ', altKey: true };
@@ -38,26 +39,11 @@ test('empty and malformed JSON-compatible rules do not match', () => {
   assert.equal(matchesKeyboardInput({ key: 'a' }, [{ keyLength: Number.NaN }]), false);
 });
 
-test('keyboard bindings resolve stable operation IDs independently from their keys', () => {
-  const bindings = [
-    { operation: 'cursor.left', rules: [{ key: ['h', 'ArrowLeft'] }] },
-    { operation: 'editor.cancel', rules: [{ key: 'Escape' }] },
-  ];
-  assert.equal(resolveKeyboardOperation({ key: 'h' }, bindings), 'cursor.left');
-  assert.equal(resolveKeyboardOperation({ key: 'ArrowLeft' }, bindings), 'cursor.left');
-  assert.equal(resolveKeyboardOperation({ key: 'Escape' }, bindings), 'editor.cancel');
-  assert.equal(resolveKeyboardOperation({ key: 'x' }, bindings), undefined);
+test('keyboard operation IDs remain stable and validated independently from keys', () => {
   assert.equal(new Set(KEYBOARD_OPERATION_IDS).size, KEYBOARD_OPERATION_IDS.length);
   for (const operation of KEYBOARD_OPERATION_IDS) assert.equal(isKeyboardOperationId(operation), true);
   assert.equal(isKeyboardOperationId('unknown.operation'), false);
   assert.equal(isKeyboardOperationId(1), false);
-});
-
-test('matching bindings follow the fixed operation order', () => {
-  assert.equal(resolveKeyboardOperation({ key: 'Enter' }, [
-    { operation: 'arrow.commit', rules: [{ key: 'Enter' }] },
-    { operation: 'selection.commit', rules: [{ key: 'Enter' }] },
-  ]), 'arrow.commit');
 });
 
 test('guide labels and sequence bindings are resolved from IDs in input configuration', () => {
@@ -85,7 +71,7 @@ test('guides contain no hard-coded kbd text and saved fields contain no key-deri
 });
 
 test('keyboard event comparisons stay inside the shared matcher', () => {
-  const files = ['App.svelte', 'EntryEditor.svelte', 'entryShortcuts.ts', 'pseudoEditing.ts',
+  const files = ['App.svelte', 'EntryEditor.svelte', 'pseudoEditing.ts',
     'borderNavigation.ts', 'formEditing.ts', 'markers.ts'];
   const forbidden = [
     /event\.(?:key|code|keyCode|ctrlKey|altKey|metaKey|shiftKey|repeat|isComposing)\s*(?:===|!==)/,
