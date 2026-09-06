@@ -57,6 +57,17 @@ test('guide labels and sequence bindings are resolved from IDs in input configur
   assert.ok(DEFAULT_FORM_INPUT_BINDINGS.every(binding => binding.sequence !== binding.value));
 });
 
+test('the floating mode badge uses shared icons and full names without the entry counter', () => {
+  const app = readFileSync(new URL('../src/App.svelte', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/app.css', import.meta.url), 'utf8');
+  assert.match(app, /class="mode-badge"/);
+  assert.match(app, /MODE_ABBREVIATIONS\[activeMode\]/);
+  assert.match(app, /MODE_HELP\[activeMode\]/);
+  assert.doesNotMatch(app, /entries\.findIndex\(.*activeEntryId.*entries\.length/);
+  assert.match(css, /\.mode-badge \{[^}]*position: fixed;[^}]*border-radius: 999px;[^}]*box-shadow:/s);
+  assert.match(css, /\.mode-badge-icon \{[^}]*width: 28px;[^}]*height: 28px;[^}]*border-radius: 50%;/s);
+});
+
 test('guides contain no hard-coded kbd text and saved fields contain no key-derived IDs', () => {
   for (const file of ['App.svelte', 'EntryEditor.svelte']) {
     const source = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');

@@ -11,7 +11,7 @@ export type EntryDocument = { version: 8; entries: Entry[] };
 export type DocumentSnapshot = { document: EntryDocument; activeEntryId: string; cursor: Cursor };
 export type EntryEditorState = {
   snapshot: EditorSnapshot;
-  mode: string;
+  mode: import('./keybindings.ts').InputMode;
   pendingMarker: boolean;
   getDisplay: () => unknown;
 };

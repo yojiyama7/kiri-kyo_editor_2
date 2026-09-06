@@ -17,10 +17,41 @@ button, input, textarea { font: inherit; }
 }
 
 .topbar, footer { display: flex; align-items: center; justify-content: space-between; }
-.topbar { margin-bottom: 16px; }
+.topbar { margin-bottom: 16px; padding-right: 156px; }
 h1 { margin: 0; font-size: 20px; font-weight: 600; }
 
-.mode { font: 12px ui-monospace, monospace; }
+.mode-badge {
+  position: fixed;
+  z-index: 15;
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px 7px 8px;
+  border: 1px solid #d5dae0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 18%);
+  color: #273442;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+.mode-badge-icon {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #8a96a3;
+  border-radius: 50%;
+  background: #edf2f7;
+  color: #344454;
+  font: 700 12px/1 ui-monospace, monospace;
+}
+.mode-badge-name { font-size: 13px; font-weight: 600; white-space: nowrap; }
 
 kbd { margin-right: 3px; font: 600 11px ui-monospace, monospace; }
 
@@ -272,7 +303,8 @@ footer { padding: 10px 0; color: #666; border-top: 1px solid #ccc; font-size: 11
 @media (max-width: 700px) {
   .shell { width: min(100% - 16px, 1100px); margin-top: 12px; }
   .editor { padding: 24px 0; }
-  .topbar { align-items: flex-end; }
+  .topbar { align-items: flex-end; padding-right: 0; }
+  .mode-badge { top: max(60px, calc(env(safe-area-inset-top) + 60px)); right: max(8px, env(safe-area-inset-right)); }
   footer { align-items: flex-start; gap: 6px; flex-direction: column; }
   .debug-columns { grid-template-columns: minmax(0, 1fr); }
 }

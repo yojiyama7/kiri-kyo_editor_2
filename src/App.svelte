@@ -6,6 +6,7 @@
   import EntryEditor from './EntryEditor.svelte';
   import { createExampleDocument } from './example';
   import { EditHistory, type EditorSnapshot } from './history';
+  import { MODE_ABBREVIATIONS, MODE_HELP } from './keybindingHelp';
   import { createEditorUpdates } from './editorUpdates';
   import { createEntryPersistence, LEGACY_STORAGE_KEY, RECOVERY_PREFIX, type PersistenceStatus } from './entryPersistence';
   import { createPersistenceClient } from './persistenceClient';
@@ -19,7 +20,6 @@
   let bindingSettings: BindingSettings = getSettings();
   const unsubscribeBindings = subscribeSettings(value => { bindingSettings = value; });
   onDestroy(unsubscribeBindings);
-  const modeLabel = (mode: string) => mode === 'MARKER_SEQUENCE' ? '定型標識入力' : mode;
   function openSettings() { finishEditing(); closeEntryMenu(false); settingsOpen = true; }
 
   const storageKey = 'IndexedDB: kiri-kyo-editor';
@@ -56,6 +56,7 @@
   $: bulkCount = parseEnglishLines(bulkDraft).length;
   $: documentState = { version: 8, entries } satisfies EntryDocument;
   $: activeState = rowStates[activeEntryId];
+  $: activeMode = activeState?.mode ?? 'NORMAL';
   // Changes schedule the idle save, but do not assemble any document-wide JSON.
   $: { ready; restoring; activeEntryId; documentState; rowStates; updates.schedule(); }
 
@@ -494,8 +495,12 @@
   <header class="topbar">
     <h1>英文構造図エディタ</h1>
     <button type="button" on:click={openSettings}>キーバインド設定</button>
-    <div class="mode">{entries.findIndex((entry) => entry.id === activeEntryId) + 1} / {entries.length} · {modeLabel(activeState?.mode ?? 'NORMAL')}</div>
   </header>
+
+  <div class="mode-badge" role="status" aria-live="polite" aria-label={`現在のモード: ${MODE_HELP[activeMode]}`}>
+    <span class="mode-badge-icon" aria-hidden="true">{MODE_ABBREVIATIONS[activeMode]}</span>
+    <span class="mode-badge-name">{MODE_HELP[activeMode]}</span>
+  </div>
 
   {#if settingsError}<p role="alert">{settingsError}</p>{/if}
   {#if legacyDiscarded}
