@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { OPERATIONS, INPUT_MODES } from '../src/keybindings.ts';
-import { MODE_ABBREVIATIONS, MODE_HELP, MODE_NAMES, operationHelp } from '../src/keybindingHelp.ts';
+import { MODE_ABBREVIATIONS, MODE_DESCRIPTIONS, MODE_HELP, MODE_NAMES, operationHelp } from '../src/keybindingHelp.ts';
 
 test('every configurable operation has complete help text', () => {
   for (const operation of OPERATIONS) {
@@ -13,7 +13,7 @@ test('every configurable operation has complete help text', () => {
   }
 });
 
-test('every input mode has a display label', () => {
+test('every input mode has a display description for the help dialog', () => {
   assert.deepEqual(Object.keys(MODE_HELP).sort(), [...INPUT_MODES].sort());
   assert.ok(Object.values(MODE_HELP).every(label => label.length > 0));
 });
@@ -27,4 +27,9 @@ test('every input mode has a unique one or two letter abbreviation', () => {
 test('every input mode has a lowercase English name', () => {
   assert.deepEqual(Object.keys(MODE_NAMES).sort(), [...INPUT_MODES].sort());
   assert.ok(Object.values(MODE_NAMES).every(name => /^[a-z]+(?: [a-z]+)*$/.test(name)));
+});
+
+test('every input mode has a detailed description', () => {
+  assert.deepEqual(Object.keys(MODE_DESCRIPTIONS).sort(), [...INPUT_MODES].sort());
+  assert.ok(Object.values(MODE_DESCRIPTIONS).every(description => description.length >= 30));
 });
