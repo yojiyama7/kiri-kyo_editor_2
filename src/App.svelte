@@ -57,9 +57,6 @@
     saveError = status.error;
   });
   const updates = createEditorUpdates({ debug: () => {}, save: saveCurrentEntry });
-  const appositionMarkerLabels = (['marker.noun', 'marker.subject', 'marker.object', 'marker.nounComplement', 'marker.plus'] satisfies MarkerId[])
-    .map(markerLabel).join(' / ');
-
   $: bulkCount = parseEnglishLines(bulkDraft).length;
   $: documentState = { version: 8, entries } satisfies EntryDocument;
   $: activeState = rowStates[activeEntryId];
@@ -510,29 +507,6 @@
       <button type="button" on:click={() => { legacyDiscarded = false; }}>閉じる</button>
     </p>
   {/if}
-  <section class="guide" aria-label="キーボード操作ガイド">
-    <span><kbd>{keyLabel('entry.next')}</kbd> 次の組</span><span><kbd>{keyLabel('entry.previous')}</kbd> 前の組</span>
-    <span><kbd>{keyLabel('entry.reorderDown')}</kbd> 下へ入れ替え</span><span><kbd>{keyLabel('entry.reorderUp')}</kbd> 上へ入れ替え</span>
-    <span><kbd>{keyLabel('english.start')}</kbd> 英文入力</span><span><kbd>{keyLabel('translation.start')}</kbd> 訳文入力</span>
-    <span><kbd>{keyLabel('form.start')}</kbd> formモード（活用表示）</span>
-    <span><kbd>{keyLabel('border.start')}</kbd> 境目モード（<kbd>{keyLabel('cursor.left')}</kbd>/<kbd>{keyLabel('cursor.right')}</kbd>で移動、<kbd>{keyLabel('cursor.rowStart')}</kbd>/<kbd>{keyLabel('cursor.rowEnd')}</kbd>で文頭・文末）</span>
-    <span>境目で <kbd>{keyLabel('pseudo.start')}</kbd> 疑似トークン作成、<kbd>{keyLabel('bracket.insertSquareOpen')}</kbd>/<kbd>{keyLabel('bracket.insertSquareClose')}</kbd> 角括弧追加、<kbd>{keyLabel('bracket.insertRoundOpen')}</kbd>/<kbd>{keyLabel('bracket.insertRoundClose')}</kbd> 丸括弧追加、<kbd>{keyLabel('bracket.insertAngleOpen')}</kbd>/<kbd>{keyLabel('bracket.insertAngleClose')}</kbd> 山括弧追加、<kbd>{keyLabel('bracket.deleteBefore')}</kbd>/<kbd>{keyLabel('bracket.deleteAfter')}</kbd> 隣の括弧・疑似トークン削除</span>
-    <span>疑似スロットで <kbd>{keyLabel('english.start')}</kbd> 再編集（空文字で削除）</span>
-    <span>normalで <kbd>{keyLabel('bracket.insertSquareOpen')}</kbd>/<kbd>{keyLabel('bracket.insertSquareClose')}</kbd>、<kbd>{keyLabel('bracket.insertRoundOpen')}</kbd>/<kbd>{keyLabel('bracket.insertRoundClose')}</kbd>、<kbd>{keyLabel('bracket.insertAngleOpen')}</kbd>/<kbd>{keyLabel('bracket.insertAngleClose')}</kbd> 現在のregionの左／右に括弧追加（元のスロットに留まる・丸括弧はスロットなし）</span>
-    <span><kbd>{keyLabel('bracket.insertSquareOpen')}</kbd> のスロットは標識・矢印に対応（T/D不可、含めた下線は複合下線）</span>
-    <span><kbd>{keyLabel('bracket.insertRoundOpen')}</kbd>/<kbd>{keyLabel('bracket.insertAngleOpen')}</kbd> は全体を選択・標識入力不可、ad系統の修飾矢印の始点／終点に対応（T/D不可、下線作成時は選択していても除外）。<kbd>{keyLabel('bracket.insertRoundClose')}</kbd>/<kbd>{keyLabel('bracket.insertAngleClose')}</kbd> は選択なし</span>
-    <span><kbd>{keyLabel('cursor.left')}</kbd><kbd>{keyLabel('cursor.right')}</kbd> 移動</span><span><kbd>{keyLabel('cursor.down')}</kbd><kbd>{keyLabel('cursor.up')}</kbd> 下線間を移動</span>
-    <span><kbd>{keyLabel('cursor.up')}</kbd> 基礎下線の内部へ（T・D分割中は不可）</span>
-    <span><kbd>{keyLabel('cursor.rowStart')}</kbd><kbd>{keyLabel('cursor.rowEnd')}</kbd> 行頭・行末</span>
-    <span><kbd>{keyLabel('selection.toggle')}</kbd> 範囲選択</span><span><kbd>{keyLabel('selection.toggle')} を2回</kbd> 個別選択（<kbd>{keyLabel('selection.toggle')}</kbd>で追加・解除）</span>
-    <span><kbd>{keyLabel('selection.commit')}</kbd> 下線作成</span><span><kbd>{keyLabel('split.t')}</kbd> T化</span><span><kbd>{keyLabel('split.d')}</kbd> 2分割（連続領域・再分割不可）</span>
-    <span><kbd>{keyLabel('arrow.start')}</kbd> 矢印作成・付け替え（{appositionMarkerLabels} は同格）→ 相手で <kbd>{keyLabel('arrow.commit')}</kbd></span>
-    <span><kbd>{keyLabel('arrow.delete')}</kbd> 矢印削除（同格は両端で可）</span>
-    <span><kbd>{keyLabel('structure.delete')}</kbd> 下線削除・T/D分割解除</span><span><kbd>{keyLabel('marker.clear')}</kbd> 標識削除</span>
-    <span>Normalで <kbd>{keyLabel('marker.start')}</kbd> 定型標識入力、<kbd>{keyLabel('marker.customStart')}</kbd> 標識を自由入力</span>
-    <span><kbd>{keyLabel('history.undo')}</kbd> 元に戻す</span><span><kbd>{keyLabel('history.redo')}</kbd> やり直す</span><span><kbd>{keyLabel('editor.cancel')}</kbd> Normal</span>
-  </section>
-
   <details class="marker-guide" on:toggle={finishMarkerInput}>
     <summary>標識の入力（Normal モード）</summary>
     <div class="marker-bindings">{#each markerBindings as binding}<span><kbd>{binding.sequence}</kbd> → {markerLabel(binding.value)}</span>{/each}</div>
