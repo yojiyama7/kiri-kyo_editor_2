@@ -82,7 +82,7 @@ test('a sparse basic T bisects only its rightmost region and positions both cont
   }
 });
 
-test('horizontal movement traverses every sparse T continuation before leaving its split slots', () => {
+test('horizontal movement leaves each sparse T region at the immediately adjacent logical X', () => {
   const original = initial();
   original.tokens.push({ id: 'token:e', text: 'e', slotId: 'e' });
   original.slots.push({ id: 'e' });
@@ -93,12 +93,17 @@ test('horizontal movement traverses every sparse T continuation before leaving i
   const { leftSlotId: left, rightSlotId: right } = d.splits[0];
   assert.equal(layout.slotY.get(left), 1);
   const first = { x: 1, y: 1 };
+  const gap = { x: 2, y: 0 };
   const last = { x: 3, y: 1 };
-  assert.deepEqual(moveRight(layout, first), last);
+  assert.deepEqual(moveRight(layout, first), gap);
+  assert.equal(at(layout, gap), 'c');
+  assert.deepEqual(moveRight(layout, gap), last);
+  assert.equal(at(layout, last), left);
   assert.deepEqual(moveRight(layout, last), { x: 4, y: 1 });
   assert.equal(at(layout, moveRight(layout, last)), right);
   assert.deepEqual(moveLeft(layout, { x: 4, y: 1 }), last);
-  assert.deepEqual(moveLeft(layout, last), first);
+  assert.deepEqual(moveLeft(layout, last), gap);
+  assert.deepEqual(moveLeft(layout, gap), first);
   assert.deepEqual(moveLeft(layout, first), { x: 0, y: 0 });
   assert.deepEqual(moveRight(layout, { x: 4, y: 1 }), { x: 5, y: 0 });
 

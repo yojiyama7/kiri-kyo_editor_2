@@ -318,22 +318,32 @@ export function moveVertical(layout: DiagramLayout, cursor: Cursor, direction: -
 export function moveLeft(layout: DiagramLayout, cursor: Cursor): Cursor { return moveHorizontal(layout, cursor, -1); }
 export function moveRight(layout: DiagramLayout, cursor: Cursor): Cursor { return moveHorizontal(layout, cursor, 1); }
 
+function sparseTContinuationY(layout: DiagramLayout, region: SlotRange, direction: -1 | 1): number | undefined {
+  const candidates = layout.splits.flatMap((split) => {
+    if (split.kind === 'd') return [];
+    const ranges = layout.rangesBySlot.get(split.leftSlotId);
+    const y = layout.slotY.get(split.leftSlotId);
+    if (!ranges || ranges.length < 2 || y === undefined) return [];
+    const index = direction === 1
+      ? ranges.findIndex((candidate) => candidate.start === region.end)
+      : ranges.findIndex((candidate) => candidate.end === region.start);
+    const crossesGap = direction === 1
+      ? index > 0 && ranges[index - 1].end <= region.start
+      : index >= 0 && index < ranges.length - 1 && ranges[index + 1].start >= region.end;
+    return crossesGap ? [y] : [];
+  });
+  return candidates.sort((a, b) => a - b)[0];
+}
+
 function moveHorizontal(layout: DiagramLayout, cursor: Cursor, direction: -1 | 1): Cursor {
   const region = regionAt(layout, cursor.x, cursor.y);
   if (region === undefined) return cursor;
-  const slotId = slotAt(layout, cursor.x, cursor.y);
-  const split = layout.splits.find((candidate) => candidate.kind !== 'd' && candidate.leftSlotId === slotId);
-  const splitRegions = slotId === undefined ? undefined : layout.rangesBySlot.get(slotId);
-  if (split && splitRegions && splitRegions.length > 1) {
-    const index = splitRegions.findIndex((candidate) => candidate.start === region.start && candidate.end === region.end);
-    const adjacent = splitRegions[index + direction];
-    if (adjacent) return { x: adjacent.start, y: cursor.y };
-  }
   const atom = direction === -1
     ? [...layout.atoms].reverse().find((atom) => atom.end <= region.start && slotAt(layout, atom.start, normalizeCursorY(layout, atom.start, cursor.y)) !== undefined)
     : layout.atoms.find((atom) => atom.start >= region.end && slotAt(layout, atom.start, normalizeCursorY(layout, atom.start, cursor.y)) !== undefined);
   if (!atom) return cursor;
-  return { x: atom.start, y: normalizeCursorY(layout, atom.start, cursor.y) };
+  const continuationY = sparseTContinuationY(layout, region, direction);
+  return { x: atom.start, y: continuationY ?? normalizeCursorY(layout, atom.start, cursor.y) };
 }
 
 export function moveToRowEdge(layout: DiagramLayout, cursor: Cursor, edge: 'start' | 'end'): Cursor {
