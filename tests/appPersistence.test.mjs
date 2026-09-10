@@ -15,27 +15,28 @@ before(() => {
   const ast = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
   const names = ['initialize', 'currentEditor', 'updateEntry', 'receiveState', 'translationActivity',
     'finishEditing', 'closeEntryMenu', 'activate', 'moveEntry', 'saveCurrentEntry', 'flushBeforeLeaving', 'retrySave',
-    'discardSavedData', 'undo'];
+    'exportSavedDocument', 'discardSavedData', 'undo'];
   const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text))
     .map(node => node.getText(ast)).join('\n');
   const body = ts.transpileModule(functions, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   createApp = new Function('dependencies', `
     const { initial, editors, persistence, createEditorUpdates, storage: localStorage, client, history,
-      RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm } = dependencies;
+      RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm, downloadEntryDocument } = dependencies;
     let entries = initial, activeEntryId = entries[0].id, rowStates = {}, ready = true, restoring = false;
     let openEntryMenuId = null;
     let saveError = null, loadFailed = false, loading = false, destroyed = false, legacyDiscarded = false;
+    let exporting = false, exportStatus = '', exportError = null;
     const updates = createEditorUpdates({ debug() {}, save: saveCurrentEntry }, { setTimeout() {}, clearTimeout() {} });
     const tick = async () => {};
     const scrollToActive = async () => {};
     ${body}
-    return { activate, moveEntry, saveCurrentEntry, flushBeforeLeaving, receiveState, initialize, discardSavedData, undo,
-      state: () => ({ entries, activeEntryId, ready, saveError, loadFailed }),
+    return { activate, moveEntry, saveCurrentEntry, flushBeforeLeaving, receiveState, initialize, discardSavedData, undo, exportSavedDocument,
+      state: () => ({ entries, activeEntryId, ready, saveError, loadFailed, exporting, exportStatus, exportError }),
       unready() { ready = false; } };
   `);
 });
 
-function setup() {
+function setup(downloadEntryDocument = () => {}) {
   const initial = [entry('a'), entry('b')];
   const states = Object.fromEntries(initial.map(value => [value.id, { document: structuredClone(value.document), blocked: false }]));
   const editors = Object.fromEntries(initial.map(value => [value.id, {
@@ -62,9 +63,57 @@ function setup() {
   };
   const history = { undo() {}, redo() {} };
   const app = createApp({ initial, editors, persistence, createEditorUpdates, storage, client, history,
-    RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm: () => true });
+    RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm: () => true, downloadEntryDocument });
   return { app, requests, states, stored, client, history, editors, initial };
 }
+
+test('export flushes saveable UI state, waits for storage, then downloads the Worker read result', async () => {
+  const downloads = [];
+  const { app, requests, states, client } = setup(document => downloads.push(document));
+  states.a.document.translation = '保存対象';
+  app.receiveState('a', { snapshot: { document: states.a.document, cursor: { x: 0, y: 0 } }, pendingMarker: false });
+  const saved = { version: 8, entries: [entry('a', '保存対象'), entry('b')] };
+  const reads = [];
+  client.send = async request => { reads.push(request.kind); return saved; };
+  const exporting = app.exportSavedDocument();
+  await drain();
+  assert.equal(app.state().exporting, true);
+  assert.equal(downloads.length, 0);
+  assert.equal(reads.length, 0);
+  requests[0].resolve();
+  await exporting;
+  assert.deepEqual(reads, ['read']);
+  assert.deepEqual(downloads, [saved]);
+  assert.equal(app.state().exportStatus, '保存済み文書をJSONでexportしました');
+});
+
+test('export neither finishes blocked input nor downloads after save failure', async () => {
+  const downloads = [];
+  const { app, requests, states } = setup(document => downloads.push(document));
+  states.a.document.translation = 'pending';
+  app.receiveState('a', { snapshot: { document: states.a.document, cursor: { x: 0, y: 0 } }, pendingMarker: true });
+  states.a.blocked = true;
+  await app.exportSavedDocument();
+  assert.equal(requests.length, 0);
+  assert.equal(downloads.length, 0);
+  assert.match(app.state().exportError, /入力中/);
+
+  states.a.blocked = false;
+  const exporting = app.exportSavedDocument();
+  await drain();
+  requests[0].reject(new Error('quota'));
+  await exporting;
+  assert.equal(downloads.length, 0);
+  assert.match(app.state().exportError, /quota/);
+});
+
+test('export control is disabled outside ready state and excluded from input-finalizing pointer and focus handlers', () => {
+  const source = readFileSync(new URL('../src/App.svelte', import.meta.url), 'utf8');
+  assert.match(source, /class="document-export"[^>]*disabled=\{!ready \|\| exporting\}/);
+  assert.match(source, /closest\('\.debug-panel, \.document-export'\)/);
+  assert.match(source, /closest\('\.diagram, \.debug-panel, \.document-export'\)/);
+  assert.match(source, /on:pointerdown\|preventDefault/);
+});
 
 test('actual click and keyboard activation save the source after finishing editing, without waiting', async () => {
   for (const keyboard of [false, true]) {

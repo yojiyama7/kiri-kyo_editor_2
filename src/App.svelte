@@ -10,6 +10,7 @@
   import { createEditorUpdates } from './editorUpdates';
   import { createEntryPersistence, LEGACY_STORAGE_KEY, RECOVERY_PREFIX, type PersistenceStatus } from './entryPersistence';
   import { createPersistenceClient } from './persistenceClient';
+  import { downloadEntryDocument } from './documentExport';
   import { scheduleEscapeFocusRelease } from './focusRelease';
   import {
     createEntry, insertEntry, insertEnglishEntries, parseEnglishLines, removeEntry, reorderEntry, withEntrySnapshot,
@@ -36,6 +37,9 @@
   let legacyDiscarded = false;
   let saveError: string | null = null;
   let copyStatus = '';
+  let exporting = false;
+  let exportStatus = '';
+  let exportError: string | null = null;
   let bulkDialog: HTMLDialogElement;
   let bulkTextarea: HTMLTextAreaElement;
   let bulkAfterId: string | null = null;
@@ -383,7 +387,7 @@
       if (openEntryMenuId) { handleEntryMenuKeydown(event); return; }
       if (matchesKeyboardInput(event, [{ key: ['Enter', ' ', 'Tab'], ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null }])) return;
     }
-    if (!(event.target instanceof Element) || !event.target.closest('.debug-panel')) updates.schedule();
+    if (!(event.target instanceof Element) || !event.target.closest('.debug-panel, .document-export')) updates.schedule();
     if (!ready || restoring || bulkAfterId !== null || matchesKeyboardInput(event, [
       { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
       { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
@@ -440,6 +444,24 @@
     persistence.retry();
   }
 
+  async function exportSavedDocument() {
+    if (!ready || exporting) return;
+    exportStatus = '';
+    exportError = null;
+    exporting = true;
+    try {
+      await persistence.flush(id => editors[id]?.canSave() ?? true);
+      const document = await client.send({ kind: 'read' });
+      if (!document) throw new Error('保存済み文書を読み取れませんでした');
+      downloadEntryDocument(document);
+      exportStatus = '保存済み文書をJSONでexportしました';
+    } catch (error) {
+      exportError = `JSONをexportできませんでした: ${String(error)}`;
+    } finally {
+      exporting = false;
+    }
+  }
+
   async function refreshDebugJSON() {
     const request = ++debugRequest;
     debugLoading = true;
@@ -475,7 +497,7 @@
   on:beforeunload={flushBeforeLeaving} on:pagehide={flushBeforeLeaving}
   on:pointerdown={(event) => {
     if (!(event.target instanceof Element) || !event.target.closest('.entry-menu')) closeEntryMenu();
-    if (!(event.target instanceof Element) || !event.target.closest('.debug-panel')) {
+    if (!(event.target instanceof Element) || !event.target.closest('.debug-panel, .document-export')) {
       updates.schedule();
       finishMarkerInput();
     }
@@ -483,7 +505,7 @@
   on:compositionstart={finishMarkerInput}
   on:focusin={(event) => {
     if (!(event.target instanceof Element) || !event.target.closest('.entry-menu')) closeEntryMenu(false);
-    if (!(event.target instanceof Element) || !event.target.closest('.diagram, .debug-panel')) finishMarkerInput();
+    if (!(event.target instanceof Element) || !event.target.closest('.diagram, .debug-panel, .document-export')) finishMarkerInput();
   }}
  />
 
@@ -496,8 +518,16 @@
 <main class="shell">
   <header class="topbar">
     <h1>英文構造図エディタ</h1>
-    <button type="button" on:click={openSettings}>キーバインド設定</button>
+    <div class="topbar-actions">
+      <button class="document-export" type="button" disabled={!ready || exporting}
+        on:pointerdown|preventDefault
+        on:click={() => void exportSavedDocument()}>{exporting ? '保存を待っています…' : 'JSONをexport'}</button>
+      <button type="button" on:click={openSettings}>キーバインド設定</button>
+    </div>
   </header>
+
+  {#if exportError}<p class="export-message" role="alert">{exportError}</p>
+  {:else if exportStatus}<p class="export-message" role="status">{exportStatus}</p>{/if}
 
   <div class="mode-badge" role="status" aria-live="polite" aria-label={`現在のモード: ${MODE_NAMES[activeMode]}`}>
     <span class="mode-badge-icon" aria-hidden="true">{MODE_ABBREVIATIONS[activeMode]}</span>

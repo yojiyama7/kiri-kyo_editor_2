@@ -72,6 +72,31 @@ export function createEntryPersistence(
   let failed: SaveBatch | undefined;
   let error: string | null = null;
   let disposed = false;
+  let completedOrderGeneration = 0;
+  const completedGenerations = new Map<string, number>();
+  const barriers = new Set<{
+    changes: Map<string, number>;
+    orderGeneration?: number;
+    resolve: () => void;
+    reject: (error: Error) => void;
+  }>();
+  function settleBarriers(reason?: unknown) {
+    for (const barrier of barriers) {
+      if (reason !== undefined) {
+        barriers.delete(barrier);
+        barrier.reject(reason instanceof Error ? reason : new Error(String(reason)));
+        continue;
+      }
+      const changesComplete = [...barrier.changes].every(([id, target]) =>
+        (completedGenerations.get(id) ?? 0) >= target);
+      const orderComplete = barrier.orderGeneration === undefined
+        || completedOrderGeneration >= barrier.orderGeneration;
+      if (changesComplete && orderComplete) {
+        barriers.delete(barrier);
+        barrier.resolve();
+      }
+    }
+  }
   function emit() { notify({ pending: dirty.size > 0 || !!order || !!active || !!failed, saving: !!active, error }); }
   function makeBatch(changes: EntryChange[], nextOrder?: SaveBatch['order']): SaveBatch {
     return { session, sequence: ++sequence, changes, ...(nextOrder ? { order: nextOrder } : {}) };
@@ -89,10 +114,15 @@ export function createEntryPersistence(
     void Promise.resolve().then(() => write(batch)).then(() => {
       if (disposed) return;
       for (const change of batch.changes) {
+        completedGenerations.set(change.id, Math.max(completedGenerations.get(change.id) ?? 0, change.generation));
         if (dirty.get(change.id)?.generation === change.generation) dirty.delete(change.id);
       }
-      if (batch.order?.generation === order?.generation) order = undefined;
+      if (batch.order) {
+        completedOrderGeneration = Math.max(completedOrderGeneration, batch.order.generation);
+        if (batch.order.generation === order?.generation) order = undefined;
+      }
       active = undefined;
+      settleBarriers();
       pump();
     }, reason => {
       if (disposed) return;
@@ -100,6 +130,7 @@ export function createEntryPersistence(
       failed = batch;
       error = String(reason);
       emit();
+      settleBarriers(reason);
     });
   }
   function mark(entry: Entry) {
@@ -128,6 +159,22 @@ export function createEntryPersistence(
       pump();
     },
     retry() { pump(); },
+    flush(eligible: (id: string) => boolean = () => true): Promise<void> {
+      if (disposed) return Promise.reject(new Error('保存処理は終了しています'));
+      const changes = new Map<string, number>();
+      for (const [id, change] of dirty) {
+        if (!eligible(id)) return Promise.reject(new Error('入力中のため保存できない文があります'));
+        changes.set(id, change.generation);
+      }
+      for (const id of changes.keys()) enqueue(id);
+      const orderGeneration = order?.generation;
+      return new Promise((resolve, reject) => {
+        const barrier = { changes, orderGeneration, resolve, reject };
+        barriers.add(barrier);
+        settleBarriers();
+        pump();
+      });
+    },
     /** Called only at page departure; include requests whose acknowledgement may be lost. */
     journal(eligible: (id: string) => boolean = () => true): RecoveryJournal {
       const outstanding = active ?? failed;
@@ -142,7 +189,10 @@ export function createEntryPersistence(
         ...(changes.size || nextOrder ? [makeBatch([...changes.values()], nextOrder)] : []),
       ] };
     },
-    dispose() { disposed = true; },
+    dispose() {
+      disposed = true;
+      settleBarriers(new Error('保存処理は終了しています'));
+    },
   };
 }
 

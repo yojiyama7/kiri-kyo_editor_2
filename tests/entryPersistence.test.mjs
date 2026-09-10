@@ -113,6 +113,38 @@ test('failed/uncertain writes retry the same request before subsequent changes',
   assert.equal(status().pending, false);
 });
 
+test('flush waits for the captured changes and order without absorbing later edits', async () => {
+  const { queue, requests } = setup();
+  const a = entry('a');
+  queue.mark(entry('a', 'at export click'));
+  queue.saveStructure([a], [entry('a', 'at export click'), entry('b')]);
+  const flushed = queue.flush();
+  let complete = false;
+  void flushed.then(() => { complete = true; });
+  await drain();
+  assert.equal(complete, false);
+  assert.equal(requests.length, 1);
+  queue.mark(entry('a', 'edited while waiting'));
+  requests[0].resolve();
+  await flushed;
+  assert.equal(complete, true);
+  assert.equal(requests.length, 1);
+  assert.equal(queue.journal().batches[0].changes[0].entry.document.translation, 'edited while waiting');
+});
+
+test('flush sends unsent changes immediately and rejects on ineligible or failed saves', async () => {
+  const { queue, requests } = setup();
+  queue.mark(entry('a', 'ready'));
+  await assert.rejects(queue.flush(id => id !== 'a'), /入力中/);
+  assert.equal(requests.length, 0);
+  const flushed = queue.flush();
+  await drain();
+  assert.equal(requests.length, 1);
+  requests[0].reject(new Error('quota'));
+  await assert.rejects(flushed, /quota/);
+  assert.deepEqual(queue.journal().batches[0], requests[0].batch);
+});
+
 test('deletion replaces a pending write and restoration recreates only the changed entry', async () => {
   const { queue, requests } = setup();
   const a = entry('a'), b = entry('b');
