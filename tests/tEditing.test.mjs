@@ -37,18 +37,49 @@ test('T transfers the marker only to the left, preserving source identity and ex
   assert.equal(reclassifyGroups(next).groups[0].kind, 'composite');
 });
 
-test('only tokens and continuous basic groups can be split, never children or composite/sparse groups', () => {
+test('T accepts sparse basic groups while D still requires one region, and neither accepts composite groups or children', () => {
   const d = initial();
   const basic = addGroup(d, ['a', 'b']);
   const sparse = addGroup(d, ['a', 'c']);
   const composite = addGroup(d, [basic.slotId]);
-  assert.equal(canSplit(d, basic.slotId), true);
-  for (const id of [sparse.slotId, composite.slotId, 'missing']) {
+  for (const id of [basic.slotId, sparse.slotId]) assert.equal(canSplit(d, id), true);
+  assert.equal(canSplit(d, sparse.slotId, 'd'), false);
+  for (const id of [composite.slotId, 'missing']) {
     assert.equal(canSplit(d, id), false);
     assert.equal(splitSlot(d, id), d);
   }
   const next = splitSlot(d, basic.slotId);
   for (const id of Object.values(next.splits[0])) assert.equal(splitSlot(next, id), next);
+});
+
+test('a sparse basic T bisects only its rightmost region and positions both controls there', () => {
+  const original = initial();
+  const source = addGroup(original, ['a', 'c']);
+  const d = splitSlot(original, source.slotId);
+  const split = d.splits[0];
+  const layout = layoutOf(d);
+  assert.deepEqual(layout.rangesBySlot.get(split.leftSlotId), [{ start: 0, end: 1 }, { start: 2, end: 3 }]);
+  assert.deepEqual(layout.rangesBySlot.get(split.rightSlotId), [{ start: 3, end: 4 }]);
+  assert.deepEqual(slotPosition(layout, split.leftSlotId), { x: 2, y: 0 });
+  assert.deepEqual(slotPosition(layout, split.rightSlotId), { x: 3, y: 0 });
+  assert.equal(isSavedState(d), true);
+  assert.deepEqual(readSavedDocument(JSON.parse(JSON.stringify(d))), d);
+  assert.deepEqual(unsplitSlot(d, split.rightSlotId), original);
+  const history = new EditHistory();
+  const before = { document: original, cursor: slotPosition(layoutOf(original), source.slotId) };
+  const after = { document: d, cursor: slotPosition(layout, split.leftSlotId) };
+  history.record(before, after);
+  assert.deepEqual(history.undo(), before); assert.deepEqual(history.redo(), after);
+  for (const available of [1000, 90]) {
+    const view = computeRenderLayout(d.tokens, d.groups, d.splits, [80, 80, 80, 80], available);
+    const sourceRegions = view.regionsBySlot.get(source.slotId);
+    const last = sourceRegions.at(-1);
+    const left = view.regionsBySlot.get(split.leftSlotId)[0];
+    const right = view.regionsBySlot.get(split.rightSlotId)[0];
+    assert.equal(left.row, last.row); assert.equal(right.row, last.row);
+    assert.deepEqual([left.left, left.right, right.left, right.right],
+      [last.left, (last.left + last.right) / 2, (last.left + last.right) / 2, last.right]);
+  }
 });
 
 test('horizontal and vertical navigation and edges distinguish two halves within one token', () => {
@@ -203,7 +234,6 @@ test('current saves round-trip T data; all versioned inner formats and malformed
     (v)=>{v.splits[0].slotId=v.splits[0].leftSlotId;},
     (v)=>{v.groups[0].slots=[v.splits[0].leftSlotId];},
     (v)=>{v.groups[0].kind='composite';},
-    (v)=>{v.groups[0].slots=['a','c'];},
     (v)=>{v.slots.find((s)=>s.id===v.splits[0].slotId).marker='marker.subject';},
   ]) {const invalid=structuredClone(d);mutate(invalid);assert.equal(isSavedState(invalid),false);}
 });

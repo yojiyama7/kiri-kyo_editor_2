@@ -956,11 +956,11 @@ test('empty reedit deletes, returning to the right token or left at the end, wit
   }
 });
 
-test('creation preflight keeps BORDER and reports a message when a split source would become discontinuous', () => {
+test('creation preflight keeps BORDER and reports a message when a D source would become discontinuous', () => {
   let d = initialDocument();
   d.groups.push({ id: 'g', slotId: 'g', kind: 'basic', slots: ['a', 'b'] });
   d.slots.push({ id: 'g' });
-  d = splitSlot(d, 'g', 't');
+  d = splitSlot(d, 'g', 'd');
   const { api, key, display, records } = setup(d);
   key('b'); key('l'); key('/');
   assert.equal(display().mode, 'BORDER');
@@ -1121,8 +1121,8 @@ test('closing-only documents are unselected and initial/restore/first cursors sk
   assert.deepEqual(other.api.snapshot().cursor, { x: 2, y: 0 });
 });
 
-test('bracket insertion rejects discontinuous T/D sources without history and ignores modified/IME keys', () => {
-  for (const kind of ['t', 'd']) {
+test('bracket insertion rejects discontinuous D sources without history and ignores modified/IME keys', () => {
+  for (const kind of ['d']) {
     let initial = initialDocument();
     initial.groups = [{ id: 'group', slotId: 'group', kind: 'basic', slots: ['a', 'b'] }];
     initial.slots.push({ id: 'group' });
@@ -1222,7 +1222,7 @@ test('NORMAL refuses missing regions, standalone [ and fractional/aligned-but-in
     grouped.groups = [{ id: 'g', slotId: 'g', kind: 'basic', slots: ['a', 'b'] }];
     grouped.slots.push({ id: 'g' });
     const split = splitSlot(grouped, 'g', kind);
-    cases.push([split, { x: 0, y: 0 }, ']', /T\/D/]);
+    if (kind === 'd') cases.push([split, { x: 0, y: 0 }, ']', /T\/D/]);
   }
   const empty = { ...initialDocument(), tokens: [], slots: [] };
   for (const key of ['[', ']']) {

@@ -34,11 +34,12 @@ export function getSlotGeometry(tokens: readonly Token[], groups: readonly Group
     let result: SlotRange[];
     if (child) {
       const source = resolve(child.split.slotId);
-      if (source.length !== 1) throw new Error('分割には連続した領域が必要です');
-      const { start, end } = source[0];
+      if (child.split.kind === 'd' && source.length !== 1) throw new Error('分割には連続した領域が必要です');
+      const preceding = source.slice(0, -1);
+      const { start, end } = source[source.length - 1];
       const ratio = child.split.kind === 'd' ? child.split.ratio ?? 0.5 : 0.5;
       const middle = start + (end - start) * ratio;
-      result = [{ start: child.right ? middle : start, end: child.right ? end : middle }];
+      result = child.right ? [{ start: middle, end }] : [...preceding, { start, end: middle }];
     } else if (group) {
       result = mergeRanges(group.slots.flatMap(resolve));
     } else throw new Error(`Unknown slot reference: ${id}`);

@@ -113,7 +113,7 @@ test('ordinary empty targets attach at the slot top while marked targets stay at
   }
 });
 
-test('empty T and D half targets attach at the slot top outside the inset case', () => {
+test('empty T targets attach at the bottom while empty D targets remain at the top outside the inset case', () => {
   for (const kind of [undefined, 't', 'd']) {
     for (const owner of ['b', 'inner']) {
       let d = initial();
@@ -138,13 +138,32 @@ test('empty T and D half targets attach at the slot top outside the inset case',
             const target = stems(r, targetId)[0];
             const y = owner === 'inner' ? 1 : 0;
             assert.equal(r.layout.slotY.get(targetId), y);
-            assert.equal(target.y, y * 38 + (marker === undefined ? 0 : 28));
+            assert.equal(target.y, y * 38 + (marker === undefined && kind === 'd' ? 0 : 28));
             assert.equal(target.row, r.view.regionsBySlot.get(targetId).at(-1).row);
             assert.equal(target.x, center(r, targetId));
             assert.equal(target.target, true);
           }
         }
       }
+    }
+  }
+});
+
+test('empty halves of a sparse basic T attach incoming arrows at the final region bottom', () => {
+  let d = initial();
+  d.slots = d.slots.map(slot => ['a', 'c'].includes(slot.id) ? { id: slot.id } : slot);
+  d.groups.push({ id: 'sparse-group', slotId: 'sparse', kind: 'basic', slots: ['a', 'c'] });
+  d.slots.push({ id: 'sparse' });
+  d = splitSlot(d, 'sparse', 't');
+  for (const targetSlotId of [d.splits[0].leftSlotId, d.splits[0].rightSlotId]) {
+    for (const width of [1000, 110]) {
+      const document = { ...d, arrows: [{ sourceSlotId: 'h', targetSlotId }] };
+      const r = render(document, width);
+      const target = stems(r, targetSlotId)[0];
+      const region = r.view.regionsBySlot.get(targetSlotId).at(-1);
+      assert.equal(target.row, r.view.regionsBySlot.get('sparse').at(-1).row);
+      assert.equal(target.y, r.layout.slotY.get(targetSlotId) * 38 + 28);
+      assert.ok(target.x >= region.left && target.x <= region.right);
     }
   }
 });
@@ -282,7 +301,7 @@ test('marked, internal and interior targets stay centered; external sources inse
   }
 });
 
-test('T and D halves use an inset only with an external source and a target at an edge', () => {
+test('T and D halves use a horizontal inset at an external edge while empty T targets remain at the bottom', () => {
   for (const kind of ['t', 'd']) {
     const d = splitSlot(initial(), 'b', kind);
     const { leftSlotId, rightSlotId } = d.splits[0];
@@ -298,7 +317,7 @@ test('T and D halves use an inset only with an external source and a target at a
       const region = r.view.regionsBySlot.get(rightSlotId).at(-1);
       assert.equal(stems(r, rightSlotId)[0].x, side === 'center' ? center(r, rightSlotId)
         : side === 'left' ? region.left + 7 : region.right - 7);
-      assert.equal(stems(r, rightSlotId)[0].y, side === 'center' ? 0 : -8);
+      assert.equal(stems(r, rightSlotId)[0].y, kind === 't' ? 28 : side === 'center' ? 0 : -8);
     }
   }
 });
@@ -447,7 +466,7 @@ test('basic targets use their split region edges and center regions narrower tha
         const expected = tokenWidth <= 28 ? center(r, side)
           : source === 'a' ? region.left + 7 : region.right - 7;
         assert.equal(target.x, expected);
-        assert.equal(target.y, -8);
+        assert.equal(target.y, 28);
         assert.ok(target.x > region.left && target.x < region.right);
       }
     }

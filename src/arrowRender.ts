@@ -73,7 +73,7 @@ export function renderArrows(layout: DiagramLayout, regionsBySlot: ReadonlyMap<s
       }
       const emptySlot = slotById.get(slotId)?.marker === undefined;
       const extendAboveSlot = apposition && emptySlot && !tHalfSlots.has(slotId);
-      const attachToSlotTop = target && emptySlot;
+      const attachToSlotTop = target && emptySlot && !tHalfSlots.has(slotId);
       return { slotId, row: region.row, x, target,
         ...(attachment && x !== attachment.x ? { attachmentX: attachment.x } : {}),
         y: attachment?.y ?? layout.slotY.get(slotId)! * 38
@@ -94,7 +94,7 @@ export function renderArrows(layout: DiagramLayout, regionsBySlot: ReadonlyMap<s
       if (determinesLeft || determinesRight) {
         const inset = Math.min(BASIC_TARGET_INSET, (targetRegion.right - targetRegion.left) / 2);
         target.x = determinesRight ? targetRegion.left + inset : targetRegion.right - inset;
-        if (slotById.get(target.slotId)?.marker === undefined) target.y -= EMPTY_SLOT_EXTENSION;
+        if (slotById.get(target.slotId)?.marker === undefined && !tHalfSlots.has(target.slotId)) target.y -= EMPTY_SLOT_EXTENSION;
         endpoints.sort((a, b) => a.row - b.row || a.x - b.x);
       }
     }

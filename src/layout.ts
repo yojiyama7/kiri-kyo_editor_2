@@ -86,7 +86,11 @@ export function groupLineSegments(
 }
 
 export function slotPosition(layout: DiagramLayout, slotId: string): Cursor | undefined {
-  const range = layout.rangesBySlot.get(slotId)?.[0];
+  const splitChild = layout.splits.some((split) => split.leftSlotId === slotId || split.rightSlotId === slotId);
+  // A sparse T keeps earlier source regions as left-side continuations, while
+  // both interactive halves are rendered in the final region.
+  const ranges = layout.rangesBySlot.get(slotId);
+  const range = splitChild ? ranges?.at(-1) : ranges?.[0];
   const y = layout.slotY.get(slotId);
   return range && y !== undefined ? { x: range.start, y } : undefined;
 }

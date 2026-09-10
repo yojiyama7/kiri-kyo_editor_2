@@ -64,13 +64,16 @@ test('new pseudo input splits whitespace and inserts independent tokens atomical
   assert.deepEqual(d, initial());
 });
 
-test('batch insertion rejects every token atomically when the border is structurally invalid', () => {
+test('batch insertion can make a T source sparse without mutating the original', () => {
   const d = initial();
   const basic = group(d, ['a', 'b']);
   const split = splitSlot(d, basic.slotId, 't');
   const before = structuredClone(split);
   const tokens = [pseudo('x', 'pseudo:x'), pseudo('y', 'pseudo:y')];
-  assert.equal(insertPseudoTokens(split, 1, tokens).ok, false);
+  const result = insertPseudoTokens(split, 1, tokens);
+  assert.equal(result.ok, true);
+  assert.equal(isSavedState(result.document), true);
+  assert.deepEqual(result.document.splits, split.splits);
   assert.deepEqual(split, before);
   assert.equal(insertPseudoTokens(split, 0, []).ok, false);
 });
@@ -106,7 +109,7 @@ test('ordinary and sparse underlines retain their memberships and skip the inser
   assert.equal(slotAt(layout, 1, 0), 'slot:pseudo');
 });
 
-test('inserting into direct or indirect split sources is rejected without changing the document', () => {
+test('inserting into a T source may make it sparse while a D source remains continuous-only', () => {
   for (const kind of ['t', 'd']) {
     const d = initial();
     const basic = group(d, ['a', 'b']);
@@ -114,8 +117,9 @@ test('inserting into direct or indirect split sources is rejected without changi
     const split = splitSlot(d, source.slotId, kind);
     const before = structuredClone(split);
     const result = insertPseudoToken(split, 1, pseudo());
-    assert.equal(result.ok, false);
-    assert.match(result.message, /T\/D/);
+    assert.equal(result.ok, kind === 't');
+    if (kind === 'd') assert.match(result.message, /T\/D/);
+    else assert.equal(isSavedState(result.document), true);
     assert.deepEqual(split, before);
     assert.equal(insertPseudoToken(split, 0, pseudo()).ok, true);
     assert.equal(insertPseudoToken(split, 3, pseudo()).ok, true);

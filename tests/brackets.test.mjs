@@ -101,7 +101,7 @@ test('[ groups stay composite with a visible y=0 dedicated slot and cannot split
   assert.equal(layoutOf(invalidBasic).groups[0].y, 1);
 });
 
-test('inserting any bracket preserves sparse groups, rejects broken T/D sources and deletes dependents only', () => {
+test('inserting any bracket preserves sparse groups, allows sparse T sources, rejects sparse D sources and deletes dependents only', () => {
   for (const char of ['[', ']', '(', ')', '<', '>']) {
     const d = initial(); const g = group(d, ['a', 'b', 'c']);
     const inserted = insert(d, 1, char);
@@ -111,7 +111,7 @@ test('inserting any bracket preserves sparse groups, rejects broken T/D sources 
     assert.deepEqual(groupLineSegments(layout, layout.groups[0]).map(s => [s.start, s.end]), [[0, 0], [2, 3]]);
     for (const kind of ['t', 'd']) {
       const split = splitSlot(d, g.slotId, kind);
-      assert.equal(insertBracket(split, 1, char).ok, false);
+      assert.equal(insertBracket(split, 1, char).ok, kind === 't');
       assert.equal(insertBracket(split, 0, char).ok, true);
       assert.equal(insertBracket(split, 3, char).ok, true);
     }
@@ -304,7 +304,7 @@ test('normal bracket borders reject fractional T/D edges without rounding and al
     d = initial(); const g = group(d, ['a', 'b']); d = splitSlot(d, g.slotId, kind); layout = layoutOf(d);
     const aligned = bracketBorderFromRegion(d.tokens, layout, slotPosition(layout, d.splits[0].leftSlotId), close);
     assert.deepEqual(aligned, { ok: true, index: 1 });
-    assert.equal(insertBracket(d, aligned.index, close).ok, false); // the existing split source would become sparse
+    assert.equal(insertBracket(d, aligned.index, close).ok, kind === 't');
     assert.equal(insertBracket(d, 0, open).ok, true);
   }
   }

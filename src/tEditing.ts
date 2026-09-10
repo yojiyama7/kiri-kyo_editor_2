@@ -8,7 +8,8 @@ export function canSplit(document: SavedState, slotId: string, kind: 't' | 'd' =
   if (document.splits?.some((split) => [split.slotId, split.leftSlotId, split.rightSlotId].includes(slotId))) return false;
   if (!document.tokens.some((token) => isBasicToken(token) && token.slotId === slotId)
     && !document.groups.some((group) => group.slotId === slotId && (kind === 'd' || group.kind === 'basic'))) return false;
-  return getSlotRanges(document.tokens, document.groups, document.splits).get(slotId)?.length === 1;
+  const regions = getSlotRanges(document.tokens, document.groups, document.splits).get(slotId);
+  return !!regions?.length && (kind === 't' || regions.length === 1);
 }
 
 export function splitSlot(document: SavedState, slotId: string, kind: 't' | 'd' = 't', cursorX?: number): SavedState {
