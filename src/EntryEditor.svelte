@@ -1069,12 +1069,15 @@
   <div class="split-slots" class:d-split={split.kind === 'd'} data-t-source={split.kind === 'd' ? undefined : split.slotId}
     data-split-source={split.slotId} data-split-kind={split.kind ?? 't'}>
     {#each [split.leftSlotId, split.rightSlotId] as id, side}
+      {@const activeRange = displayLayout.rangesBySlot.get(id)?.at(-1)}
+      {@const currentAtControl = currentId === id && activeRange !== undefined
+        && activeRange.start <= cursorX && cursorX < activeRange.end}
       <button type="button" class="slot t-half"
         style={`width: ${(renderLayout.regionsBySlot.get(id)?.at(-1)?.right ?? 0) - (renderLayout.regionsBySlot.get(id)?.at(-1)?.left ?? 0)}px`}
         tabindex="-1"
         class:arrow-source={arrowSourceId === id}
-        class:current={currentId === id}
-        class:current-region={currentId === id}
+        class:current={currentAtControl}
+        class:current-region={currentAtControl}
         class:selected={selecting && selectedSlotIds.has(id)}
         class:covered={!visibleSlot(displayLayout, id)}
         disabled={!visibleSlot(displayLayout, id)}
@@ -1256,16 +1259,18 @@
                       {#if segment.startConnection}<span class="connection-dot start" style={`--connection-color: ${segment.startConnection}`}></span>{/if}
                     </div>
                   {:else}
+                    {@const currentContinuation = continuationSlotId !== undefined && currentId === continuationSlotId
+                      && currentRegion !== undefined && segment.logicalRanges.some((range) =>
+                        range.start < currentRegion.end && range.end > currentRegion.start)}
                     <button type="button" class="line-segment"
                       tabindex="-1"
-                      class:arrow-source={continuationSlotId !== undefined && arrowSourceId === continuationSlotId}
-                      class:current={continuationSlotId !== undefined && currentId === continuationSlotId}
-                      class:current-region={continuationSlotId !== undefined && currentId === continuationSlotId && currentRegion !== undefined
-                        && segment.logicalRanges.some((range) => range.start < currentRegion.end && range.end > currentRegion.start)}
-                      class:selected={continuationSlotId !== undefined && selecting && selectedSlotIds.has(continuationSlotId)}
+                      class:arrow-source={!split && arrowSourceId === placement.group.slotId}
+                      class:current={currentContinuation}
+                      class:current-region={currentContinuation}
+                      class:selected={!split && selecting && selectedSlotIds.has(placement.group.slotId)}
                       style={`left: ${segment.left}px; width: ${segment.right - segment.left}px`}
                       data-region-start={segment.start} data-region-end={segment.end}
-                      data-slot-id={continuationSlotId ?? placement.group.slotId}
+                      data-slot-id={placement.group.slotId}
                       title={GROUP_KIND_LABELS[placement.group.kind]}
                       aria-label={`${GROUP_KIND_LABELS[placement.group.kind]}${split ? ` ${split.kind === 'd' ? 'D分割' : 'T化'}の継続区間` : ''}${!split && slotById.get(placement.group.slotId)?.marker ? ` 標識: ${markerLabel(slotById.get(placement.group.slotId)?.marker)}` : ''}`}
                       on:mousedown|preventDefault
