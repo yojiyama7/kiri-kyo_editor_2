@@ -119,6 +119,28 @@ export function createPersistenceStore(factory: IDBFactory, name = DATABASE_NAME
       done,
     ]);
   }
+  async function replace(value: unknown): Promise<EntryDocument> {
+    const document = readEntryDocument(value);
+    if (!document) throw new Error('importするversion 8のセーブデータが不正です');
+    const db = await open();
+    const tx = db.transaction(['entries', 'metadata'], 'readwrite');
+    const done = completed(tx);
+    const entries = tx.objectStore('entries');
+    const metadata = tx.objectStore('metadata');
+    const operations: Promise<unknown>[] = [];
+    try {
+      operations.push(request(entries.clear()), request(metadata.clear()));
+      for (const entry of document.entries) operations.push(request(entries.put(entry)));
+      operations.push(request(metadata.put({ version: 8, ids: document.entries.map(entry => entry.id) } satisfies DocumentMetadata, 'document')));
+      await Promise.all([...operations, done]);
+      return document;
+    } catch (error) {
+      for (const operation of operations) void operation.catch(() => {});
+      try { tx.abort(); } catch { /* A failed transaction may already have aborted. */ }
+      await done.catch(() => {});
+      throw error;
+    }
+  }
   async function load(input: Extract<PersistenceRequest, { kind: 'load' }>): Promise<{ document: EntryDocument; discardedLegacy: boolean }> {
     let discardedLegacy = input.legacyRaw !== null;
     const currentRecovery = input.recovery.filter(raw => {
@@ -151,5 +173,5 @@ export function createPersistenceStore(factory: IDBFactory, name = DATABASE_NAME
     }
     return { document: (await read())!, discardedLegacy };
   }
-  return { read, write, load, discard };
+  return { read, write, load, replace, discard };
 }

@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { createEntryPersistence, RECOVERY_PREFIX, LEGACY_STORAGE_KEY } from '../src/entryPersistence.ts';
 import { createEditorUpdates } from '../src/editorUpdates.ts';
+import { withEntrySnapshot } from '../src/entryDocument.ts';
+import { entryDocumentsEqual, readImportedDocument } from '../src/documentImport.ts';
 
 const entry = (id, text = '') => ({ id, document: {
   tokens: [], slots: [], groups: [], splits: [], arrows: [], translation: text,
@@ -14,24 +16,32 @@ before(() => {
   const source = readFileSync(new URL('../src/App.svelte', import.meta.url), 'utf8').split('<script lang="ts">')[1].split('</script>')[0];
   const ast = ts.createSourceFile('App.ts', source, ts.ScriptTarget.Latest, true);
   const names = ['initialize', 'currentEditor', 'updateEntry', 'receiveState', 'translationActivity',
-    'finishEditing', 'closeEntryMenu', 'activate', 'moveEntry', 'saveCurrentEntry', 'flushBeforeLeaving', 'retrySave',
-    'exportSavedDocument', 'discardSavedData', 'undo'];
+    'snapshot', 'finishEditing', 'closeEntryMenu', 'activate', 'moveEntry', 'saveCurrentEntry', 'flushBeforeLeaving', 'retrySave',
+    'exportSavedDocument', 'chooseImportFile', 'selectImportFile', 'closeImportDialog', 'confirmImport', 'discardSavedData', 'undo'];
   const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text))
     .map(node => node.getText(ast)).join('\n');
   const body = ts.transpileModule(functions, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   createApp = new Function('dependencies', `
     const { initial, editors, persistence, createEditorUpdates, storage: localStorage, client, history,
-      RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm, downloadEntryDocument } = dependencies;
+      RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm, downloadEntryDocument, withEntrySnapshot } = dependencies;
+    const { entryDocumentsEqual, readImportedDocument } = dependencies;
     let entries = initial, activeEntryId = entries[0].id, rowStates = {}, ready = true, restoring = false;
     let openEntryMenuId = null;
     let saveError = null, loadFailed = false, loading = false, destroyed = false, legacyDiscarded = false;
     let exporting = false, exportStatus = '', exportError = null;
+    let importing = false, importStatus = '', importError = null, pendingImport = null;
+    let importFileInput, importDialog;
     const updates = createEditorUpdates({ debug() {}, save: saveCurrentEntry }, { setTimeout() {}, clearTimeout() {} });
     const tick = async () => {};
     const scrollToActive = async () => {};
     ${body}
     return { activate, moveEntry, saveCurrentEntry, flushBeforeLeaving, receiveState, initialize, discardSavedData, undo, exportSavedDocument,
-      state: () => ({ entries, activeEntryId, ready, saveError, loadFailed, exporting, exportStatus, exportError }),
+      chooseImportFile, closeImportDialog, confirmImport,
+      selectImportFile,
+      state: () => ({ entries, activeEntryId, ready, saveError, loadFailed, exporting, exportStatus, exportError,
+        importing, importStatus, importError, pendingImport }),
+      setPendingImport(value, dialog) { pendingImport = value; importDialog = dialog; },
+      setImportFileInput(value) { importFileInput = value; },
       unready() { ready = false; } };
   `);
 });
@@ -61,9 +71,10 @@ function setup(downloadEntryDocument = () => {}) {
     async load() { return { document: { version: 8, entries: initial }, discardedLegacy: false }; },
     async send() { return undefined; },
   };
-  const history = { undo() {}, redo() {} };
+  const history = { records: [], record(before, after) { this.records.push({ before, after }); }, undo() {}, redo() {} };
   const app = createApp({ initial, editors, persistence, createEditorUpdates, storage, client, history,
-    RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm: () => true, downloadEntryDocument });
+    RECOVERY_PREFIX, LEGACY_STORAGE_KEY, confirm: () => true, downloadEntryDocument, withEntrySnapshot,
+    entryDocumentsEqual, readImportedDocument });
   return { app, requests, states, stored, client, history, editors, initial };
 }
 
@@ -109,10 +120,112 @@ test('export neither finishes blocked input nor downloads after save failure', a
 
 test('export control is disabled outside ready state and excluded from input-finalizing pointer and focus handlers', () => {
   const source = readFileSync(new URL('../src/App.svelte', import.meta.url), 'utf8');
-  assert.match(source, /class="document-export"[^>]*disabled=\{!ready \|\| exporting\}/);
-  assert.match(source, /closest\('\.debug-panel, \.document-export'\)/);
-  assert.match(source, /closest\('\.diagram, \.debug-panel, \.document-export'\)/);
+  assert.match(source, /class="document-export"[^>]*disabled=\{!ready \|\| exporting \|\| importing\}/);
+  assert.match(source, /closest\('\.debug-panel, \.document-export, \.document-import, \.import-dialog'\)/);
+  assert.match(source, /closest\('\.diagram, \.debug-panel, \.document-export, \.document-import, \.import-dialog'\)/);
   assert.match(source, /on:pointerdown\|preventDefault/);
+});
+
+test('import refuses to open a file picker while an editor input is active', () => {
+  const { app, editors } = setup();
+  let clicks = 0;
+  app.setImportFileInput({ click() { clicks++; } });
+  editors.a.getInputMode = () => 'FORM';
+  app.chooseImportFile();
+  assert.equal(clicks, 0);
+  assert.match(app.state().importError, /入力中/);
+  editors.a.getInputMode = () => null;
+  editors.b.getInputMode = () => null;
+  app.chooseImportFile();
+  assert.equal(clicks, 1);
+});
+
+test('selected import files are parsed, reset for reselection, and shown for confirmation', async () => {
+  const { app } = setup();
+  let shown = 0;
+  app.setPendingImport(null, { showModal() { shown++; }, close() {} });
+  const imported = { version: 8, entries: [entry('c', '日本語')] };
+  const input = { files: [{ name: 'save.json', text: async () => JSON.stringify(imported) }], value: 'fake-path' };
+  await app.selectImportFile({ currentTarget: input });
+  assert.equal(input.value, '');
+  assert.equal(shown, 1);
+  assert.equal(app.state().pendingImport.filename, 'save.json');
+  assert.deepEqual(app.state().pendingImport.document, imported);
+});
+
+test('confirmed import waits for current saves, replaces storage, and records one whole-document history step', async () => {
+  const { app, requests, states, client, history, editors } = setup();
+  editors.a.getInputMode = () => null;
+  editors.b.getInputMode = () => null;
+  states.a.document.translation = 'before import';
+  app.receiveState('a', { snapshot: { document: states.a.document, cursor: { x: 3, y: 0 } }, pendingMarker: false });
+  const current = { version: 8, entries: [entry('a', 'before import'), entry('b')] };
+  const replacement = { version: 8, entries: [entry('c', 'imported'), entry('d', '日本語')] };
+  const kinds = [];
+  client.send = async request => {
+    kinds.push(request.kind);
+    if (request.kind === 'read') return current;
+    if (request.kind === 'replace') { assert.deepEqual(request.document, replacement); return replacement; }
+  };
+  let closes = 0;
+  app.setPendingImport({ filename: 'save.json', document: replacement }, { close() { closes++; } });
+  const importing = app.confirmImport();
+  await drain();
+  assert.equal(app.state().importing, true);
+  assert.deepEqual(kinds, []);
+  requests[0].resolve();
+  await importing;
+  assert.deepEqual(kinds, ['read', 'replace']);
+  assert.equal(closes, 1);
+  assert.deepEqual(app.state().entries, replacement.entries);
+  assert.equal(app.state().activeEntryId, 'c');
+  assert.equal(history.records.length, 1);
+  assert.deepEqual(history.records[0].before.document, current);
+  assert.deepEqual(history.records[0].after.document, replacement);
+  assert.match(app.state().importStatus, /2組/);
+
+  history.undo = () => structuredClone(history.records[0].before);
+  await app.undo(false);
+  await drain();
+  assert.deepEqual(app.state().entries, current.entries);
+  assert.deepEqual(requests[1].batch.order.ids, ['a', 'b']);
+  requests[1].resolve();
+  await drain();
+  history.redo = () => structuredClone(history.records[0].after);
+  await app.undo(true);
+  await drain();
+  assert.deepEqual(app.state().entries, replacement.entries);
+  assert.deepEqual(requests[2].batch.order.ids, ['c', 'd']);
+  requests[2].resolve();
+});
+
+test('identical and failed imports do not change the screen or history', async () => {
+  const { app, client, history, initial, editors } = setup();
+  editors.a.getInputMode = () => null;
+  editors.b.getInputMode = () => null;
+  const current = { version: 8, entries: initial };
+  let replacements = 0;
+  client.send = async request => {
+    if (request.kind === 'read') return current;
+    replacements++;
+    throw new Error('quota');
+  };
+  let closes = 0;
+  app.setPendingImport({ filename: 'same.json', document: structuredClone(current) }, { close() { closes++; } });
+  await app.confirmImport();
+  assert.equal(replacements, 0);
+  assert.equal(closes, 1);
+  assert.equal(history.records.length, 0);
+  assert.match(app.state().importStatus, /変更はありません/);
+
+  const replacement = { version: 8, entries: [entry('c')] };
+  app.setPendingImport({ filename: 'other.json', document: replacement }, { close() { closes++; } });
+  await app.confirmImport();
+  assert.equal(replacements, 1);
+  assert.deepEqual(app.state().entries, initial);
+  assert.equal(history.records.length, 0);
+  assert.match(app.state().importError, /quota/);
+  assert.equal(app.state().pendingImport.filename, 'other.json');
 });
 
 test('actual click and keyboard activation save the source after finishing editing, without waiting', async () => {

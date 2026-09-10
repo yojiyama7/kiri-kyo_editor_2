@@ -15,6 +15,8 @@ worker.onmessage = ({ data: { id, request } }) => {
       if (request.kind === 'write') {
         await store.write(request.batch);
         worker.postMessage({ id });
+      } else if (request.kind === 'replace') {
+        worker.postMessage({ id, document: await store.replace(request.document) });
       } else if (request.kind === 'discard') {
         await store.discard();
         worker.postMessage({ id });

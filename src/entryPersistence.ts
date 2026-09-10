@@ -199,6 +199,7 @@ export function createEntryPersistence(
 export type PersistenceRequest =
   | { kind: 'load'; legacyRaw: string | null; legacyError?: string; initial: EntryDocument; recovery: string[] }
   | { kind: 'write'; batch: SaveBatch }
+  | { kind: 'replace'; document: EntryDocument }
   | { kind: 'discard' }
   | { kind: 'read' };
 export type PersistenceResponse = { id: number; document?: EntryDocument; discardedLegacy?: boolean; error?: string };

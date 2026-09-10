@@ -58,7 +58,7 @@ before(async () => {
     const entries = editors.map((_, i) => ({ id: String(i) }));
     let activeEntryId = String(initialIndex);
     let openEntryMenuId = null;
-    const ready = true, restoring = false, bulkAfterId = null, settingsOpen = false;
+    const ready = true, restoring = false, importing = false, bulkAfterId = null, settingsOpen = false;
     const updates = { schedule() {} };
     const persistence = { saveEntry() {} };
     const published = [];

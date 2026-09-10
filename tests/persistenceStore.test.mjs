@@ -117,6 +117,34 @@ test('failed transaction rolls back every entry, order and receipt, permitting t
   assert.deepEqual(await store.read(), document(entry('b'), entry('a', 'edited')));
 });
 
+test('replace atomically validates and replaces every entry and its order', async () => {
+  const store = createPersistenceStore(new IDBFactory());
+  const initial = document(entry('a'), entry('b'));
+  await load(store, initial);
+  const replacement = document(entry('c', '日本語'), entry('a', 'new'));
+  assert.deepEqual(await store.replace(replacement), replacement);
+  assert.deepEqual(await store.read(), replacement);
+  await assert.rejects(store.replace({ version: 8, entries: [] }), /不正/);
+  assert.deepEqual(await store.read(), replacement);
+});
+
+test('failed replacement transaction preserves the complete previous document', async () => {
+  const store = createPersistenceStore(new IDBFactory());
+  const initial = document(entry('a'), entry('b'));
+  await load(store, initial);
+  const original = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (value, ...args) {
+    if (this.name === 'entries' && value.id === 'c') {
+      this.transaction.abort();
+      throw new Error('quota exceeded');
+    }
+    return original.call(this, value, ...args);
+  };
+  try { await assert.rejects(store.replace(document(entry('c'), entry('d'))), /quota/); }
+  finally { IDBObjectStore.prototype.put = original; }
+  assert.deepEqual(await store.read(), initial);
+});
+
 test('recovery skips committed requests, restores outstanding changes and is repeatable', async () => {
   const store = createPersistenceStore(new IDBFactory());
   const initial = document(entry('a'), entry('b'));

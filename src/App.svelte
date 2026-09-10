@@ -11,6 +11,7 @@
   import { createEntryPersistence, LEGACY_STORAGE_KEY, RECOVERY_PREFIX, type PersistenceStatus } from './entryPersistence';
   import { createPersistenceClient } from './persistenceClient';
   import { downloadEntryDocument } from './documentExport';
+  import { entryDocumentsEqual, readImportedDocument } from './documentImport';
   import { scheduleEscapeFocusRelease } from './focusRelease';
   import {
     createEntry, insertEntry, insertEnglishEntries, parseEnglishLines, removeEntry, reorderEntry, withEntrySnapshot,
@@ -40,6 +41,12 @@
   let exporting = false;
   let exportStatus = '';
   let exportError: string | null = null;
+  let importing = false;
+  let importStatus = '';
+  let importError: string | null = null;
+  let importFileInput: HTMLInputElement;
+  let importDialog: HTMLDialogElement;
+  let pendingImport: { filename: string; document: EntryDocument } | null = null;
   let bulkDialog: HTMLDialogElement;
   let bulkTextarea: HTMLTextAreaElement;
   let bulkAfterId: string | null = null;
@@ -383,12 +390,13 @@
 
   function handleKeydown(event: KeyboardEvent) {
     if (settingsOpen) return;
+    if (event.target instanceof Element && event.target.closest('.import-dialog')) return;
     if (event.target instanceof Element && event.target.closest('.entry-menu')) {
       if (openEntryMenuId) { handleEntryMenuKeydown(event); return; }
       if (matchesKeyboardInput(event, [{ key: ['Enter', ' ', 'Tab'], ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null }])) return;
     }
-    if (!(event.target instanceof Element) || !event.target.closest('.debug-panel, .document-export')) updates.schedule();
-    if (!ready || restoring || bulkAfterId !== null || matchesKeyboardInput(event, [
+    if (!(event.target instanceof Element) || !event.target.closest('.debug-panel, .document-export, .document-import, .import-dialog')) updates.schedule();
+    if (!ready || restoring || importing || bulkAfterId !== null || matchesKeyboardInput(event, [
       { isComposing: true, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null },
       { keyCode: 229, ctrlKey: null, altKey: null, metaKey: null, shiftKey: null, repeat: null, isComposing: null },
     ])) return;
@@ -445,9 +453,11 @@
   }
 
   async function exportSavedDocument() {
-    if (!ready || exporting) return;
+    if (!ready || exporting || importing) return;
     exportStatus = '';
     exportError = null;
+    importStatus = '';
+    importError = null;
     exporting = true;
     try {
       await persistence.flush(id => editors[id]?.canSave() ?? true);
@@ -459,6 +469,92 @@
       exportError = `JSONをexportできませんでした: ${String(error)}`;
     } finally {
       exporting = false;
+    }
+  }
+
+  function chooseImportFile() {
+    if (!ready || exporting || importing || pendingImport) return;
+    if (entries.some(({ id }) => (editors[id]?.getInputMode() ?? null) !== null)) {
+      importError = '入力中の編集を完了または取消してから、もう一度importしてください。';
+      importStatus = '';
+      return;
+    }
+    importError = null;
+    importStatus = '';
+    exportError = null;
+    exportStatus = '';
+    importFileInput.click();
+  }
+
+  async function selectImportFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || importing) return;
+    importing = true;
+    try {
+      const document = await readImportedDocument(file);
+      pendingImport = { filename: file.name, document };
+      importError = null;
+      await tick();
+      importing = false;
+      importDialog.showModal();
+    } catch (error) {
+      pendingImport = null;
+      importError = `JSONをimportできませんでした: ${String(error)}`;
+    } finally {
+      importing = false;
+    }
+  }
+
+  function closeImportDialog() {
+    if (importing) return;
+    importDialog.close();
+    pendingImport = null;
+    importError = null;
+  }
+
+  async function confirmImport() {
+    if (!ready || importing || !pendingImport) return;
+    const candidate = pendingImport.document;
+    const before = snapshot();
+    importing = true;
+    importError = null;
+    try {
+      await persistence.flush(id => editors[id]?.canSave() ?? true);
+      const saved = await client.send({ kind: 'read' });
+      if (!saved) throw new Error('現在の保存済み文書を読み取れませんでした');
+      if (entryDocumentsEqual(saved, candidate)) {
+        importing = false;
+        closeImportDialog();
+        importStatus = '現在と同じセーブデータです。変更はありません。';
+        return;
+      }
+      const replaced = await client.send({ kind: 'replace', document: candidate });
+      if (!replaced) throw new Error('importした文書を保存できませんでした');
+      const after: DocumentSnapshot = {
+        document: replaced,
+        activeEntryId: replaced.entries[0].id,
+        cursor: { x: 0, y: 0 },
+      };
+      history.record({ ...before, document: saved }, after);
+      importDialog.close();
+      pendingImport = null;
+      restoring = true;
+      entries = replaced.entries;
+      activeEntryId = after.activeEntryId;
+      rowStates = {};
+      await tick();
+      for (const entry of entries) editors[entry.id]?.restore({ document: entry.document, cursor: { x: 0, y: 0 } }, entry.id === activeEntryId);
+      await tick();
+      restoring = false;
+      importStatus = `${entries.length}組のセーブデータをimportしました`;
+      void scrollToActive(true);
+    } catch (error) {
+      restoring = false;
+      importError = `JSONをimportできませんでした: ${String(error)}`;
+    } finally {
+      importing = false;
     }
   }
 
@@ -497,7 +593,7 @@
   on:beforeunload={flushBeforeLeaving} on:pagehide={flushBeforeLeaving}
   on:pointerdown={(event) => {
     if (!(event.target instanceof Element) || !event.target.closest('.entry-menu')) closeEntryMenu();
-    if (!(event.target instanceof Element) || !event.target.closest('.debug-panel, .document-export')) {
+    if (!(event.target instanceof Element) || !event.target.closest('.debug-panel, .document-export, .document-import, .import-dialog')) {
       updates.schedule();
       finishMarkerInput();
     }
@@ -505,7 +601,7 @@
   on:compositionstart={finishMarkerInput}
   on:focusin={(event) => {
     if (!(event.target instanceof Element) || !event.target.closest('.entry-menu')) closeEntryMenu(false);
-    if (!(event.target instanceof Element) || !event.target.closest('.diagram, .debug-panel, .document-export')) finishMarkerInput();
+    if (!(event.target instanceof Element) || !event.target.closest('.diagram, .debug-panel, .document-export, .document-import, .import-dialog')) finishMarkerInput();
   }}
  />
 
@@ -519,15 +615,22 @@
   <header class="topbar">
     <h1>英文構造図エディタ</h1>
     <div class="topbar-actions">
-      <button class="document-export" type="button" disabled={!ready || exporting}
+      <button class="document-export" type="button" disabled={!ready || exporting || importing}
         on:pointerdown|preventDefault
         on:click={() => void exportSavedDocument()}>{exporting ? '保存を待っています…' : 'JSONをexport'}</button>
-      <button type="button" on:click={openSettings}>キーバインド設定</button>
+      <button class="document-import" type="button" disabled={!ready || exporting || importing}
+        on:pointerdown|preventDefault on:click={chooseImportFile}>{importing ? 'import処理中…' : 'JSONをimport'}</button>
+      <button type="button" disabled={importing} on:click={openSettings}>キーバインド設定</button>
     </div>
   </header>
 
+  <input class="import-file-input" bind:this={importFileInput} type="file" accept=".json,application/json"
+    aria-label="importするJSONファイル" tabindex="-1" on:change={selectImportFile} />
+
   {#if exportError}<p class="export-message" role="alert">{exportError}</p>
   {:else if exportStatus}<p class="export-message" role="status">{exportStatus}</p>{/if}
+  {#if importError && !pendingImport}<p class="import-message" role="alert">{importError}</p>
+  {:else if importStatus}<p class="import-message" role="status">{importStatus}</p>{/if}
 
   <div class="mode-badge" role="status" aria-live="polite" aria-label={`現在のモード: ${MODE_NAMES[activeMode]}`}>
     <span class="mode-badge-icon" aria-hidden="true">{MODE_ABBREVIATIONS[activeMode]}</span>
@@ -541,7 +644,7 @@
     </p>
   {/if}
   {#if ready}
-    <div class="entries">
+    <div class="entries" inert={importing} aria-busy={importing}>
       {#each entries as entry, index (entry.id)}
         <section id={`entry-${entry.id}`} data-entry-id={entry.id} class="entry" class:active={activeEntryId === entry.id}
           tabindex="-1"
@@ -595,6 +698,26 @@
       <span role="status" aria-live="polite">追加件数: {bulkCount}組</span>
       <button type="button" on:click={closeBulkEntry}>キャンセル</button>
       <button type="button" class="bulk-submit" disabled={!bulkCount} on:click={addBulkEntries}>追加</button>
+    </div>
+  </dialog>
+
+  <dialog bind:this={importDialog} class="import-dialog" aria-labelledby="import-title" aria-describedby="import-description"
+    on:cancel|preventDefault={closeImportDialog}>
+    <h2 id="import-title">セーブデータをimport</h2>
+    <p id="import-description">現在の全組を、選択したファイルの内容で置き換えます。この操作はUndoできます。</p>
+    {#if pendingImport}
+      <dl class="import-summary">
+        <div><dt>ファイル</dt><dd>{pendingImport.filename}</dd></div>
+        <div><dt>現在</dt><dd>{entries.length}組</dd></div>
+        <div><dt>import後</dt><dd>{pendingImport.document.entries.length}組</dd></div>
+      </dl>
+    {/if}
+    {#if importError}<p class="import-dialog-error" role="alert">{importError}</p>{/if}
+    <div class="import-actions">
+      <button type="button" disabled={importing} on:click={closeImportDialog}>キャンセル</button>
+      <button type="button" class="import-submit" disabled={importing} on:click={() => void confirmImport()}>
+        {importing ? '保存しています…' : '置き換える'}
+      </button>
     </div>
   </dialog>
 
