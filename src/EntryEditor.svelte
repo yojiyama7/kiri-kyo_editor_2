@@ -1246,6 +1246,7 @@
             {#each row.groups as { placement, segments } (placement.group.id)}
               {@const split = splitBySource.get(placement.group.slotId)}
               {@const allRegions = renderLayout.regionsBySlot.get(placement.group.slotId)!}
+              {@const continuationSlotId = split ? (split.kind === 'd' ? undefined : split.leftSlotId) : placement.group.slotId}
               <div class="group-line" style={`--row: ${placement.y + 1}`} data-group-kind={placement.group.kind}>
                 {#each segments as segment}
                   {@const last = segment === allRegions[allRegions.length - 1]}
@@ -1257,14 +1258,14 @@
                   {:else}
                     <button type="button" class="line-segment"
                       tabindex="-1"
-                      class:arrow-source={!split && arrowSourceId === placement.group.slotId}
-                      class:current={!split && currentId === placement.group.slotId}
-                      class:current-region={!split && currentId === placement.group.slotId && currentRegion !== undefined
+                      class:arrow-source={continuationSlotId !== undefined && arrowSourceId === continuationSlotId}
+                      class:current={continuationSlotId !== undefined && currentId === continuationSlotId}
+                      class:current-region={continuationSlotId !== undefined && currentId === continuationSlotId && currentRegion !== undefined
                         && segment.logicalRanges.some((range) => range.start < currentRegion.end && range.end > currentRegion.start)}
-                      class:selected={selecting && selectedSlotIds.has(placement.group.slotId)}
+                      class:selected={continuationSlotId !== undefined && selecting && selectedSlotIds.has(continuationSlotId)}
                       style={`left: ${segment.left}px; width: ${segment.right - segment.left}px`}
                       data-region-start={segment.start} data-region-end={segment.end}
-                      data-slot-id={placement.group.slotId}
+                      data-slot-id={continuationSlotId ?? placement.group.slotId}
                       title={GROUP_KIND_LABELS[placement.group.kind]}
                       aria-label={`${GROUP_KIND_LABELS[placement.group.kind]}${split ? ` ${split.kind === 'd' ? 'D分割' : 'T化'}の継続区間` : ''}${!split && slotById.get(placement.group.slotId)?.marker ? ` 標識: ${markerLabel(slotById.get(placement.group.slotId)?.marker)}` : ''}`}
                       on:mousedown|preventDefault

@@ -82,6 +82,30 @@ test('a sparse basic T bisects only its rightmost region and positions both cont
   }
 });
 
+test('horizontal movement traverses every sparse T continuation before leaving its split slots', () => {
+  const original = initial();
+  original.tokens.push({ id: 'token:e', text: 'e', slotId: 'e' });
+  original.slots.push({ id: 'e' });
+  addGroup(original, ['b']); // Raise the overlapping sparse T above the base row.
+  const source = addGroup(original, ['b', 'd']);
+  const d = splitSlot(original, source.slotId);
+  const layout = layoutOf(d);
+  const { leftSlotId: left, rightSlotId: right } = d.splits[0];
+  assert.equal(layout.slotY.get(left), 1);
+  const first = { x: 1, y: 1 };
+  const last = { x: 3, y: 1 };
+  assert.deepEqual(moveRight(layout, first), last);
+  assert.deepEqual(moveRight(layout, last), { x: 4, y: 1 });
+  assert.equal(at(layout, moveRight(layout, last)), right);
+  assert.deepEqual(moveLeft(layout, { x: 4, y: 1 }), last);
+  assert.deepEqual(moveLeft(layout, last), first);
+  assert.deepEqual(moveLeft(layout, first), { x: 0, y: 0 });
+  assert.deepEqual(moveRight(layout, { x: 4, y: 1 }), { x: 5, y: 0 });
+
+  const ordinary = layoutOf(original);
+  assert.deepEqual(moveRight(ordinary, { x: 1, y: 1 }), { x: 2, y: 0 });
+});
+
 test('horizontal and vertical navigation and edges distinguish two halves within one token', () => {
   const d = splitSlot(initial(), 'b');
   const {leftSlotId:left, rightSlotId:right} = d.splits[0];

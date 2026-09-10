@@ -66,3 +66,15 @@ test('diagram slot controls do not receive native browser focus', () => {
     assert.match(control, /on:mousedown\|preventDefault/);
   }
 });
+
+test('sparse T continuation regions expose the left slot interaction state', () => {
+  const source = readFileSync(new URL('../src/EntryEditor.svelte', import.meta.url), 'utf8');
+  const continuation = source.match(/\{@const continuationSlotId[\s\S]*?<button type="button" class="line-segment"[\s\S]*?on:click=\{\(\) => \{/)?.[0];
+  assert.ok(continuation);
+  assert.match(continuation, /split\.kind === 'd' \? undefined : split\.leftSlotId/);
+  assert.match(continuation, /class:arrow-source=\{continuationSlotId !== undefined && arrowSourceId === continuationSlotId\}/);
+  assert.match(continuation, /class:current=\{continuationSlotId !== undefined && currentId === continuationSlotId\}/);
+  assert.match(continuation, /class:current-region=\{continuationSlotId !== undefined && currentId === continuationSlotId/);
+  assert.match(continuation, /class:selected=\{continuationSlotId !== undefined && selecting && selectedSlotIds\.has\(continuationSlotId\)\}/);
+  assert.match(continuation, /data-slot-id=\{continuationSlotId \?\? placement\.group\.slotId\}/);
+});
